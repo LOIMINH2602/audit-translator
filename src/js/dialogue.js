@@ -47,7 +47,7 @@ export function initDialogue() {
     const to = partner ? 'vi-VN' : partnerLang();
     diag(
       `QUYẾT ĐỊNH: ${partner ? 'Đối tác' : 'Tôi'} conf=${confidence.toFixed(2)} từ ` +
-      candidates.map((c) => `${c.side}:${c.confidence.toFixed(2)}`).join(' vs ')
+      candidates.map((c) => `${c.side}:${c.confidence.toFixed(2)}:"${c.text}"`).join(' vs ')
     );
     $('dlgOrig').textContent = text;
     try {
