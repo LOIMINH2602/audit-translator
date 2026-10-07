@@ -6,7 +6,7 @@ import { initMeeting } from './meeting.js';
 
 // Trình duyệt nhúng trong app khác (Zalo, Facebook...) hoặc WebView: thiếu giọng đọc, nhận diện không ổn định, không cài PWA được.
 // Chrome thật trên Android không có "Version/x" trong UA; WebView thì có.
-const inAppBrowser = /; wv\)|Zalo|FBAN|FBAV|Instagram|Line\//.test(navigator.userAgent) ||
+const inAppBrowser = /; wv\)|Zalo|FBAN|FBAV|Instagram|Line\//.test(navigator.userAgent) ||
   (/Android/.test(navigator.userAgent) && /Version\/[\d.]+ Chrome/.test(navigator.userAgent));
 if (!supported || inAppBrowser) {
   $('browserWarn').textContent = inAppBrowser
