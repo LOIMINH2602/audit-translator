@@ -67,10 +67,16 @@ Push vào nhánh `main`, workflow `pages.yml` tự đăng `src/` lên GitHub Pag
 
 ## Test thật trên điện thoại
 
-Mở mục **Chẩn đoán & cài đặt thử nghiệm** cuối trang:
+Dùng tab **Tự kiểm tra** (tab thứ 3). Bấm 1 nút, app tự chạy và tự chấm:
 
-- **Giọng đọc có trên máy**: mỗi tiếng hiện tên giọng hoặc "THIẾU GIỌNG"; bấm "Đọc thử" để nghe chất lượng.
-- **Phân xử người nói**: đổi giữa "Nhanh" (như bản nháp) và "So độ tin cậy" để so độ chính xác.
-- **Nhật ký sự kiện**: ghi từng final của 2 recognizer kèm confidence, bên thắng, độ trễ dịch, độ trễ TTS, lỗi. Bấm "Sao chép nhật ký" để gửi lại.
+1. Môi trường: có đang ở Chrome thật không (loại trừ Zalo/Facebook/WebView), quyền micro, HTTPS.
+2. Mở 2 recognizer cùng lúc 4 giây, kiểm tra cả hai có sống không, phân loại lỗi (audio-capture, network, language-not-supported).
+3. Dịch 8 chiều Anh/Trung/Nhật/Hàn ⇄ Việt.
+4. Đọc thử giọng 5 tiếng, người dùng bấm "nghe rõ / sai / không nghe".
+5. Đọc to 6 câu mẫu: app biết câu đúng nên tự tính bên nào nghe đúng và chế độ phân xử "Nhanh" / "Tin cậy" chọn đúng bao nhiêu câu.
 
-Rủi ro đã biết: Chrome Android có thể không cho 2 recognizer chạy cùng lúc. Nếu một bên bị ngắt liên tục, nhật ký sẽ có dòng `CẢNH BÁO: bị ngắt liên tục`.
+Kết quả là báo cáo tiếng Việt có mục "Vấn đề phát hiện" kèm cách xử lý, nút **Gửi báo cáo** (chia sẻ qua Zalo/Messenger) và **Sao chép**. Logic chấm điểm nằm ở `src/js/scoring.js`, có test trong `tests/scoring.test.js`.
+
+Mục **Chẩn đoán & cài đặt thử nghiệm** cuối trang vẫn còn cho việc soi chi tiết: nhật ký từng sự kiện, đọc thử từng giọng, nút Thử dịch, đổi chế độ phân xử.
+
+Rủi ro đã biết: Chrome Android có thể không cho 2 recognizer chạy cùng lúc. Nếu một bên bị ngắt liên tục, báo cáo sẽ nêu rõ.

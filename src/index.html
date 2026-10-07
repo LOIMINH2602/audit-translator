@@ -18,6 +18,7 @@
   <div class="tabs" role="tablist">
     <button class="tab" id="tabDialogue" role="tab" aria-selected="true">Đối thoại 1:1<br><small>chia sẻ tai nghe</small></button>
     <button class="tab" id="tabMeeting" role="tab" aria-selected="false">Nghe hội trường<br><small>nhiều người, nhiều tiếng</small></button>
+    <button class="tab" id="tabTest" role="tab" aria-selected="false">Tự kiểm tra<br><small>test máy này</small></button>
   </div>
 
   <div class="note" id="browserWarn" hidden>Trình duyệt này không hỗ trợ nhận diện giọng nói liên tục. Hãy mở trang bằng Google Chrome.</div>
@@ -83,6 +84,33 @@
     </div>
   </section>
 
+  <!-- Tab 3: tự kiểm tra -->
+  <section class="screen" id="screenTest">
+    <div class="panel">
+      <span class="label">Tự kiểm tra máy này</span>
+      <p class="sub" style="margin:0">Bấm 1 nút, app tự thử micro, nhận diện, dịch, giọng đọc rồi tự chấm và lập báo cáo (khoảng 3 phút). Mở bằng Chrome, ở nơi yên tĩnh, đeo tai nghe sẽ dùng khi audit.</p>
+      <span class="label">Ngôn ngữ đối tác để thử</span>
+      <select id="stPartner">
+        <option value="en-US">Tiếng Anh</option>
+        <option value="zh-CN">Tiếng Trung</option>
+        <option value="ja-JP">Tiếng Nhật</option>
+        <option value="ko-KR">Tiếng Hàn</option>
+      </select>
+      <button class="primary big" id="stStart">Bắt đầu tự kiểm tra</button>
+      <div class="st-ask" id="stAsk"></div>
+      <div class="st-list" id="stList"></div>
+    </div>
+    <div class="panel" id="stReportPanel" hidden>
+      <span class="label">Kết quả</span>
+      <div id="stSummary"></div>
+      <div class="row">
+        <button class="primary" id="stShare" hidden>Gửi báo cáo</button>
+        <button id="stCopy">Sao chép báo cáo</button>
+      </div>
+      <pre class="diag" id="stReport"></pre>
+    </div>
+  </section>
+
   <div class="panel">
     <details>
       <summary>Bảng thuật ngữ ngành (áp vào bản dịch tiếng Việt, sửa theo khách hàng)</summary>
@@ -123,6 +151,7 @@ quality manual=sổ tay chất lượng</textarea>
   </div>
 
   <p class="sub" style="text-align:center">Dịch bằng dịch vụ miễn phí (Google / MyMemory). Có thể sai thuật ngữ hiếm — luôn chụp lại bản gốc để đối chiếu.</p>
+  <p class="sub" id="appVersion" style="text-align:center;font-size:11px"></p>
 </main>
 <script type="module" src="js/main.js"></script>
 </body>

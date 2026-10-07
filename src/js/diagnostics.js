@@ -19,6 +19,10 @@ export function diag(msg) {
   }
 }
 
+export function recentLog(n) {
+  return lines.slice(-n).join('\n');
+}
+
 function renderVoices() {
   const box = $('diagVoices');
   box.textContent = '';

@@ -3,11 +3,11 @@ import { supported } from './recognizer.js';
 import { initDiagnostics } from './diagnostics.js';
 import { initDialogue } from './dialogue.js';
 import { initMeeting } from './meeting.js';
+import { initSelfTest } from './selftest.js';
+import { isInAppBrowser } from './env.js';
+import { APP_VERSION } from './config.js';
 
-// Trình duyệt nhúng trong app khác (Zalo, Facebook...) hoặc WebView: thiếu giọng đọc, nhận diện không ổn định, không cài PWA được.
-// Chrome thật trên Android không có "Version/x" trong UA; WebView thì có.
-const inAppBrowser = /; wv\)|Zalo|FBAN|FBAV|Instagram|Line\//.test(navigator.userAgent) ||
-  (/Android/.test(navigator.userAgent) && /Version\/[\d.]+ Chrome/.test(navigator.userAgent));
+const inAppBrowser = isInAppBrowser();
 if (!supported || inAppBrowser) {
   $('browserWarn').textContent = inAppBrowser
     ? 'Bạn đang mở trong trình duyệt của app khác (Zalo, Facebook...). Giọng đọc và nhận diện sẽ không hoạt động đúng. Sao chép link rồi dán vào Google Chrome.'
@@ -15,18 +15,22 @@ if (!supported || inAppBrowser) {
   $('browserWarn').hidden = false;
 }
 
+const TABS = { dlg: ['tabDialogue', 'screenDialogue'], mtg: ['tabMeeting', 'screenMeeting'], test: ['tabTest', 'screenTest'] };
 function selectTab(which) {
-  $('tabDialogue').setAttribute('aria-selected', which === 'dlg');
-  $('tabMeeting').setAttribute('aria-selected', which === 'mtg');
-  $('screenDialogue').classList.toggle('active', which === 'dlg');
-  $('screenMeeting').classList.toggle('active', which === 'mtg');
+  for (const [key, [tab, screen]] of Object.entries(TABS)) {
+    $(tab).setAttribute('aria-selected', key === which);
+    $(screen).classList.toggle('active', key === which);
+  }
 }
 $('tabDialogue').onclick = () => selectTab('dlg');
 $('tabMeeting').onclick = () => selectTab('mtg');
+$('tabTest').onclick = () => selectTab('test');
 
+$('appVersion').textContent = 'Bản ' + APP_VERSION;
 initDiagnostics();
 initDialogue();
 initMeeting();
+initSelfTest();
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
