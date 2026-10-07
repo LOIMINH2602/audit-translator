@@ -23,7 +23,7 @@ src/                  site tĩnh, đây là thứ được deploy
     meeting.js        màn hội trường
     recognizer.js     bọc Web Speech API, tự restart, báo khi bị ngắt liên tục
     arbiter.js        phân xử kết quả của 2 recognizer (nhanh / so confidence)
-    translate.js      MyMemory, dự phòng Google
+    translate.js      Google, dự phòng MyMemory
     tts.js            speechSynthesis, chọn giọng theo ngôn ngữ
     glossary.js       bảng thuật ngữ ngành
     diagnostics.js    nhật ký + danh sách giọng + đọc thử
@@ -55,7 +55,7 @@ Push vào nhánh `main`, workflow `pages.yml` tự đăng `src/` lên GitHub Pag
 ## Ràng buộc đã chốt
 
 - Không đóng gói APK/WebView: WebView không có Web Speech API.
-- Dịch miễn phí (MyMemory, dự phòng Google endpoint không chính thức). Chưa dùng Claude API trả phí.
+- Dịch miễn phí: Google endpoint không chính thức trước, MyMemory dự phòng (đổi thứ tự 07/10/2026 vì MyMemory chèn chữ thừa ở chiều Việt→Nhật/Trung). Chưa dùng Claude API trả phí.
 - Chỉ Chrome Android/desktop. Safari/Firefox không hỗ trợ nhận diện giọng nói liên tục.
 
 ## Cài lên điện thoại

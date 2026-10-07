@@ -1,4 +1,5 @@
-// Dịch miễn phí: MyMemory trước, lỗi/quá hạn mức thì chuyển sang endpoint Google không chính thức.
+// Dịch miễn phí: Google (endpoint không chính thức) trước vì sạch hơn; lỗi/bị chặn thì rơi về MyMemory.
+// MyMemory chiều Việt→Nhật/Trung từng chèn chữ thừa nên chỉ dùng làm dự phòng.
 
 const MYMEMORY = 'https://api.mymemory.translated.net/get';
 const GOOGLE = 'https://translate.googleapis.com/translate_a/single';
@@ -38,17 +39,15 @@ async function viaGoogle(text, from, to, timeoutMs) {
 
 // Trả về { text, engine, ms } để UI hiển thị độ trễ dịch.
 export async function translate(text, from, to, { timeoutMs = 6000 } = {}) {
+  const engines = [['google', viaGoogle], ['mymemory', viaMyMemory]];
   const t0 = performance.now();
-  try {
-    const out = await viaMyMemory(text, from, to, timeoutMs);
-    return { text: out, engine: 'mymemory', ms: Math.round(performance.now() - t0) };
-  } catch (_) {
-    // rơi xuống fallback
+  for (const [engine, run] of engines) {
+    try {
+      const out = await run(text, from, to, timeoutMs);
+      return { text: out, engine, ms: Math.round(performance.now() - t0) };
+    } catch (_) {
+      // thử engine kế tiếp
+    }
   }
-  try {
-    const out = await viaGoogle(text, from, to, timeoutMs);
-    return { text: out, engine: 'google', ms: Math.round(performance.now() - t0) };
-  } catch (_) {
-    throw new Error('translate_failed');
-  }
+  throw new Error('translate_failed');
 }
