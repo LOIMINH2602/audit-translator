@@ -25,7 +25,7 @@ export function onVoicesChanged(cb) {
 
 // Trả về Promise resolve khi đọc xong (hoặc lỗi / quá thời gian dự phòng).
 // onStart(msTừLúcGọi, voice) được gọi khi âm thanh thực sự bắt đầu — dùng đo độ trễ TTS.
-export function speak(text, lang, { onStart } = {}) {
+export function speak(text, lang, { onStart, onError } = {}) {
   return new Promise((resolve) => {
     if (!synth || !text) return resolve();
     const u = new SpeechSynthesisUtterance(text);
@@ -45,7 +45,10 @@ export function speak(text, lang, { onStart } = {}) {
     const guard = setTimeout(finish, Math.max(5000, text.length * 150));
     u.onstart = () => onStart && onStart(Math.round(performance.now() - t0), voice);
     u.onend = finish;
-    u.onerror = finish;
+    u.onerror = (e) => {
+      onError && onError(e.error || 'unknown');
+      finish();
+    };
     synth.speak(u);
   });
 }

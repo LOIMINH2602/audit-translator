@@ -54,7 +54,7 @@ export function initDialogue() {
       const r = await translate(text, from, to);
       const out = partner ? applyGlossary(text, r.text, parseGlossary($('glossary').value)) : r.text;
       $('dlgTrans').textContent = out;
-      setError($('dlgErr'), pickVoice(to) ? '' : `Máy chưa có giọng đọc ${NAMES[to]}. Xem mục Chẩn đoán.`);
+      setError($('dlgErr'), pickVoice(to) ? '' : `Không thấy giọng đọc ${NAMES[to]} trong danh sách (vẫn thử đọc). Xem mục Chẩn đoán.`);
 
       const entry = { time: timeNow(), tag: partner ? 'Đối tác' : 'Tôi', src: text, out, info: `dịch ${r.ms}ms · ${r.engine}` };
       log.push(entry);
@@ -66,6 +66,7 @@ export function initDialogue() {
       recA.pause();
       recB.pause();
       await speak(out, to, {
+        onError: (err) => diag(`LỖI TTS ${to}: ${err}`),
         onStart: (ms, voice) => {
           entry.info += ` · TTS +${ms}ms${voice ? ' · ' + voice.name : ''}`;
           renderLog($('dlgLog'), log);
@@ -74,10 +75,10 @@ export function initDialogue() {
       await new Promise((res) => setTimeout(res, TAIL_MS));
       speaking = false;
       if (running) { recA.start(); recB.start(); }
-    } catch (_) {
+    } catch (e) {
       speaking = false;
       setError($('dlgErr'), 'Dịch không thành công (mạng chậm hoặc dịch vụ bận). Nói lại câu vừa rồi.');
-      diag('LỖI dịch: translate_failed');
+      diag('LỖI dịch: ' + (e.details || e.message));
     }
   }
 

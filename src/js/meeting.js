@@ -32,9 +32,9 @@ export function initMeeting() {
       renderLog($('mtgLog'), log);
       $('mtgCopy').disabled = false;
       if ($('mtgSpeak').checked) speak(out, 'vi-VN');
-    } catch (_) {
+    } catch (e) {
       setError($('mtgErr'), 'Dịch không thành công, bỏ qua câu này.');
-      diag('LỖI dịch (hội trường): translate_failed');
+      diag('LỖI dịch (hội trường): ' + (e.details || e.message));
     }
   }
 

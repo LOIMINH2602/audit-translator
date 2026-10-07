@@ -41,13 +41,16 @@ async function viaGoogle(text, from, to, timeoutMs) {
 export async function translate(text, from, to, { timeoutMs = 6000 } = {}) {
   const engines = [['google', viaGoogle], ['mymemory', viaMyMemory]];
   const t0 = performance.now();
+  const errors = [];
   for (const [engine, run] of engines) {
     try {
       const out = await run(text, from, to, timeoutMs);
       return { text: out, engine, ms: Math.round(performance.now() - t0) };
-    } catch (_) {
-      // thử engine kế tiếp
+    } catch (e) {
+      errors.push(`${engine}: ${e.name === 'AbortError' ? 'timeout' : e.message}`);
     }
   }
-  throw new Error('translate_failed');
+  const err = new Error('translate_failed');
+  err.details = errors.join(' | '); // để UI ghi vào nhật ký chẩn đoán
+  throw err;
 }

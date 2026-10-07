@@ -3,6 +3,7 @@
 
 import { $, copyText, timeNow } from './ui.js';
 import { NAMES, SAMPLES } from './config.js';
+import { translate } from './translate.js';
 import { pickVoice, voices, onVoicesChanged, speak, supported as ttsSupported } from './tts.js';
 
 const lines = [];
@@ -37,7 +38,10 @@ function renderVoices() {
     btn.textContent = 'Đọc thử';
     btn.onclick = () => {
       diag(`TTS thử ${lang} voice=${v ? v.name : 'mặc định'}`);
-      speak(SAMPLES[lang], lang, { onStart: (ms) => diag(`TTS ${lang} bắt đầu sau ${ms}ms`) });
+      speak(SAMPLES[lang], lang, {
+        onStart: (ms) => diag(`TTS ${lang} bắt đầu sau ${ms}ms`),
+        onError: (err) => diag(`LỖI TTS ${lang}: ${err}`),
+      });
     };
     row.append(label, btn);
     box.appendChild(row);
@@ -49,5 +53,14 @@ export function initDiagnostics() {
   renderVoices();
   onVoicesChanged(renderVoices);
   diag('UA: ' + navigator.userAgent);
+  $('diagTranslate').onclick = async () => {
+    diag('Thử dịch en→vi "Please show me the corrective action records."');
+    try {
+      const r = await translate('Please show me the corrective action records.', 'en-US', 'vi-VN');
+      diag(`Dịch OK (${r.engine}, ${r.ms}ms): ${r.text}`);
+    } catch (e) {
+      diag('Dịch LỖI: ' + (e.details || e.message));
+    }
+  };
   $('diagCopy').onclick = () => copyText(lines.join('\n'), $('diagCopy'));
 }
