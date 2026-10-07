@@ -71,3 +71,10 @@ tra response thật). Claude Code cần tự verify toàn bộ luồng dịch + 
 - Không đóng gói APK/WebView (lý do: mất Web Speech API).
 - Không đưa code vào `PROJECTS/audit-translator/` — chỉ `PROJECT.md` trỏ tới đây (`CODE/audit-translator/`).
 - Không ghi đè `prototype/` — giữ lại làm tham chiếu, code thật để ở thư mục gốc project này (ví dụ `src/`).
+
+## Trạng thái cập nhật 07/10/2026 (Claude Code)
+- Đã làm: `git init`, dựng `src/` (module hoá), README, test logic (`npm test`), mục "Chẩn đoán" trong app, push repo, bật GitHub Pages.
+- **Link cố định:** https://loiminh2602.github.io/audit-translator/ (repo `LOIMINH2602/audit-translator`, public; push vào `main` là tự deploy).
+- **Đổi so với bàn giao gốc:** thứ tự dịch là Google trước, MyMemory dự phòng (Lợi Minh chốt 07/10 vì MyMemory chèn chữ thừa chiều Việt→Nhật/Trung). Tài khoản GitHub thực dùng là `LOIMINH2602` (bàn giao ghi `LOIMINH260285`).
+- **Chưa làm được:** test thật trên Chrome Android (nhận diện người nói, độ trễ TTS, chất lượng giọng) — cần Lợi Minh test bằng mục Chẩn đoán rồi gửi nhật ký.
+- Rủi ro cần xem khi test: Chrome Android có thể không cho 2 recognizer chạy song song (nhật ký sẽ có `CẢNH BÁO: bị ngắt liên tục`). Mic có thể nghe lại TTS ở màn Hội trường vì không tạm dừng recognizer khi đọc (FreeArc là tai nghe hở).
