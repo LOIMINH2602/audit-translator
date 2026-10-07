@@ -71,7 +71,10 @@ export function createRecognizer({ name, lang, onFinal, onInterim, onError, onLo
     start() {
       want = true;
       clearTimeout(timer);
+      const begin = Date.now();
       safeStart();
+      // Không có sự kiện start sau 3 giây: recognizer này không khởi động được (thường do bị recognizer khác giành mic).
+      setTimeout(() => want && startedAt < begin && log('CẢNH BÁO: không khởi động được sau 3 giây'), 3000);
     },
     // dừng hẳn, vẫn nhận nốt kết quả đang chờ
     stop() {
