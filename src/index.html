@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Phiên Dịch Audit</title>
+<meta name="theme-color" content="#0B6E5F">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header>
+  <h1>Phiên Dịch Audit</h1>
+  <p class="sub">Nghe liên tục, dịch 2 chiều hoặc nghe hiểu phòng họp. Chạy trên trình duyệt, âm thanh ra tai nghe Bluetooth đang kết nối.</p>
+</header>
+<main>
+  <div class="tabs" role="tablist">
+    <button class="tab" id="tabDialogue" role="tab" aria-selected="true">Đối thoại 1:1<br><small>chia sẻ tai nghe</small></button>
+    <button class="tab" id="tabMeeting" role="tab" aria-selected="false">Nghe hội trường<br><small>nhiều người, nhiều tiếng</small></button>
+  </div>
+
+  <div class="note" id="browserWarn" hidden>Trình duyệt này không hỗ trợ nhận diện giọng nói liên tục. Hãy mở trang bằng Google Chrome.</div>
+
+  <!-- Màn 1: đối thoại 1:1 -->
+  <section class="screen active" id="screenDialogue">
+    <div class="panel">
+      <span class="label">Ngôn ngữ đối tác</span>
+      <select id="partnerLang">
+        <option value="en-US">Tiếng Anh</option>
+        <option value="zh-CN">Tiếng Trung</option>
+        <option value="ja-JP">Tiếng Nhật</option>
+        <option value="ko-KR">Tiếng Hàn</option>
+      </select>
+      <p class="sub" style="margin:0">App tự nhận diện ai đang nói — không cần bấm chuyển. Ai nói tiếng nào, dịch tự động sang tiếng còn lại.</p>
+    </div>
+
+    <div class="panel">
+      <button class="primary big" id="dlgToggle">Bắt đầu nghe</button>
+      <div class="status"><span class="dot" id="dlgDot"></span><span id="dlgStatus">Đang tắt</span></div>
+      <div class="live-box">
+        <div class="orig" id="dlgOrig"></div>
+        <div class="trans" id="dlgTrans"></div>
+      </div>
+      <div class="err" id="dlgErr" hidden></div>
+    </div>
+
+    <div class="panel">
+      <div class="row" style="justify-content:space-between">
+        <span class="label">Biên bản</span>
+        <button class="ghost" id="dlgCopy" disabled>Sao chép tất cả</button>
+      </div>
+      <div class="log" id="dlgLog"></div>
+    </div>
+  </section>
+
+  <!-- Màn 2: nghe hội trường -->
+  <section class="screen" id="screenMeeting">
+    <div class="panel">
+      <span class="label">Người đang nói dùng tiếng gì?</span>
+      <div class="chips" id="meetingLangChips">
+        <button class="chip" data-lang="en-US" aria-pressed="true">Tiếng Anh</button>
+        <button class="chip" data-lang="zh-CN" aria-pressed="false">Tiếng Trung</button>
+        <button class="chip" data-lang="ja-JP" aria-pressed="false">Tiếng Nhật</button>
+        <button class="chip" data-lang="ko-KR" aria-pressed="false">Tiếng Hàn</button>
+      </div>
+      <p class="sub" style="margin:0">Chạm đổi khi người nói đổi ngôn ngữ. Nhận diện giọng nói chỉ xử lý được 1 ngôn ngữ mỗi lúc.</p>
+    </div>
+
+    <div class="panel">
+      <button class="primary big" id="mtgToggle">Bắt đầu nghe</button>
+      <div class="status"><span class="dot" id="mtgDot"></span><span id="mtgStatus">Đang tắt</span></div>
+      <label class="chk"><input type="checkbox" id="mtgSpeak"> Đọc to bản dịch vào tai nghe</label>
+      <div class="err" id="mtgErr" hidden></div>
+    </div>
+
+    <div class="panel">
+      <div class="row" style="justify-content:space-between">
+        <span class="label">Nội dung đang nghe (mới nhất trên đầu)</span>
+        <button class="ghost" id="mtgCopy" disabled>Sao chép tất cả</button>
+      </div>
+      <div class="log" id="mtgLog"></div>
+    </div>
+  </section>
+
+  <div class="panel">
+    <details>
+      <summary>Bảng thuật ngữ ngành (áp vào bản dịch tiếng Việt, sửa theo khách hàng)</summary>
+      <textarea id="glossary" spellcheck="false">corrective action and preventive action=hành động khắc phục và phòng ngừa
+non-conformity=điểm không phù hợp
+nonconformance=điểm không phù hợp
+traceability=truy xuất nguồn gốc
+chain of custody=chuỗi hành trình sản phẩm
+corrective action=hành động khắc phục
+root cause=nguyên nhân gốc
+internal audit=đánh giá nội bộ
+management review=xem xét của lãnh đạo
+work instruction=hướng dẫn công việc
+quality manual=sổ tay chất lượng</textarea>
+    </details>
+  </div>
+
+  <div class="panel">
+    <details>
+      <summary>Chẩn đoán &amp; cài đặt thử nghiệm</summary>
+      <div class="panel" style="border:none;padding:10px 0 0">
+        <span class="label">Phân xử người nói (đối thoại 1:1)</span>
+        <select id="arbiterMode">
+          <option value="fast">Nhanh — bên nào có kết quả trước thì thắng</option>
+          <option value="confidence">So độ tin cậy — chờ 0,6 giây, chọn bên chắc hơn</option>
+        </select>
+        <span class="label">Giọng đọc có trên máy</span>
+        <div id="diagVoices"></div>
+        <div class="row" style="justify-content:space-between">
+          <span class="label">Nhật ký sự kiện</span>
+          <button class="ghost small" id="diagCopy">Sao chép nhật ký</button>
+        </div>
+        <pre class="diag" id="diagLog"></pre>
+      </div>
+    </details>
+  </div>
+
+  <p class="sub" style="text-align:center">Dịch bằng dịch vụ miễn phí (MyMemory / Google). Có thể sai thuật ngữ hiếm — luôn chụp lại bản gốc để đối chiếu.</p>
+</main>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
