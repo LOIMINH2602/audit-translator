@@ -16,7 +16,7 @@ import { createArbiter } from './arbiter.js';
 import { detectTranslate } from './translate.js';
 import { pickSpeaker, syllables, isEcho } from './speaker.js';
 import { parseGlossary, applyGlossary } from './glossary.js';
-import { speak, pickVoice, cancel as cancelSpeech } from './tts.js';
+import { speak, canSpeak, warmUp, getMode, setMode, resetAuto, cancel as cancelSpeech } from './tts.js';
 import { diag } from './diagnostics.js';
 
 // Mở lại mic ngay khi đọc xong (không chờ dư âm): đuôi bản dịch lọt vào mic thì isEcho lọc trong ECHO_WINDOW_MS.
@@ -78,6 +78,8 @@ export function initDialogue() {
           track: probe.track,
           continuous: false,
           onFinal: (text) => { if (!busy) arbiter.push(side, text); },
+          // bên này nghe dở rồi kết thúc không ra chữ (thường là sai tiếng): báo ngay để arbiter khỏi chờ tới maxMs
+          onNoMatch: () => { if (!busy) arbiter.push(side, ''); },
           onStart: onListening,
           onInterim: (text) => {
             if (busy) return;
@@ -210,7 +212,7 @@ export function initDialogue() {
       const out = partner ? applyGlossary(win.text, win.r.text, parseGlossary($('glossary').value)) : win.r.text;
       $('dlgOrig').textContent = win.text;
       $('dlgTrans').textContent = out;
-      setError($('dlgErr'), pickVoice(to) ? '' : `Không thấy giọng đọc ${NAMES[to]} trong danh sách (vẫn thử đọc). Xem mục Chẩn đoán.`);
+      setError($('dlgErr'), canSpeak(to) ? '' : `Không thấy giọng đọc ${NAMES[to]} trong máy (vẫn thử đọc). Chọn "Giọng Google" ở ô Giọng đọc.`);
 
       const entry = { time: timeNow(), tag: WHO[win.side], src: win.text, out, info: `chờ câu ${waitMs}ms${how === 'final' ? '' : ' (' + how + ')'} · dịch ${win.r.ms}ms · ${win.r.engine}` };
       log.push(entry);
@@ -225,7 +227,7 @@ export function initDialogue() {
         rate: Number($('ttsRate').value) || 1,
         onError: (err) => diag(`LỖI TTS ${to}: ${err}`),
         onStart: (ms, voice) => {
-          entry.info += ` · TTS +${ms}ms${voice ? ' · ' + voice.name : ''}`;
+          entry.info += ` · TTS +${ms}ms${voice ? ' · ' + voice : ''}`;
           renderLog($('dlgLog'), log);
         },
         onEnd: (ms, end) => {
@@ -302,6 +304,10 @@ export function initDialogue() {
         mode = probe.parallel ? 'parallel' : 'turn';
         buildRecognizers();
       }
+      // Đọc thử không tiếng giọng tiếng đối tác (lần đầu): giọng máy chậm thì tự dùng giọng Google Dịch.
+      // Tối đa ~0,9 giây. Tiếng Việt không đọc thử: đo luôn ở câu thật đầu tiên.
+      $('dlgStatus').textContent = 'Đang chuẩn bị giọng đọc…';
+      await warmUp(partnerLang());
       running = true;
       turn = 'me';
       $('dlgToggle').textContent = 'Dừng nghe';
@@ -325,6 +331,7 @@ export function initDialogue() {
   }
 
   $('partnerLang').onchange = () => {
+    if (!running) warmUp(partnerLang());
     if (mode === 'parallel') recs.partner.setLang(partnerLang());
     else if (mode === 'turn' && running && !busy) {
       pauseAll();
@@ -350,6 +357,13 @@ export function initDialogue() {
 
   $('dlgCopy').onclick = () => copyText(logToText(log), $('dlgCopy'));
 
+  $('ttsEngine').value = getMode();
+  $('ttsEngine').onchange = () => {
+    const m = $('ttsEngine').value;
+    if (m === 'auto') resetAuto(); // chọn lại Tự động = đo lại từ đầu
+    setMode(m);
+    diag('Giọng đọc: ' + m);
+  };
   if (readPref(RATE_KEY)) $('ttsRate').value = readPref(RATE_KEY);
   $('ttsRate').onchange = () => writePref(RATE_KEY, $('ttsRate').value);
 

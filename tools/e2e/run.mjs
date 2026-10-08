@@ -5,6 +5,7 @@
 //   đã đo thật trên Chrome). App sẽ dò ra và chạy chế độ luân phiên.
 // - Kịch bản 8 lượt: luân phiên thường, câu ngắn "Đúng rồi", và 2 lần 1 người nói 2 câu liền.
 //   Khi app "mời nói lại", người nói lặp lại câu đó 1 lần.
+// Biến môi trường: SLOW_TTS=ms (giọng máy tiếng nước ngoài chậm, mặc định 2500; 0 = nhanh), BLOCK_GTTS=1.
 // Cần: Chrome cài sẵn (đổi đường dẫn bằng biến CHROME), mạng ra Google (nhận diện + dịch + tải mẫu giọng).
 // Mẫu giọng tải về tools/e2e/audio/ (không commit).
 
@@ -62,6 +63,7 @@ const p = partner === 'en-US' ? 'en' : partner === 'zh-CN' ? 'zh-CN' : partner.s
 const script = [['me', 'vi-7'], ['partner', `${p}-1`], ['me', 'vi-24'], ['partner', `${p}-2`], ['partner', `${p}-3`], ['me', 'vi-25'], ['me', 'vi-23'], ['partner', `${p}-4`]];
 const page =
   `window.__CLIPS=${JSON.stringify(clips)};\n` + readFileSync(join(here, 'fakemic.js'), 'utf8') +
+  `\nwindow.__slowTts=${Number(process.env.SLOW_TTS ?? 2500)};` +
   `\nwindow.__CFG=${JSON.stringify({ partner, android, script })};\n` + readFileSync(join(here, 'e2e.js'), 'utf8');
 
 // ---------- server + Chrome ----------
@@ -70,7 +72,8 @@ const profile = mkdtempSync(join(tmpdir(), 'audit-e2e-'));
 const dbg = 9300 + Math.floor(Math.random() * 500);
 const chrome = spawn(CHROME, [
   `--remote-debugging-port=${dbg}`, `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check',
-  '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required', 'about:blank',
+  // cửa sổ Chrome bị cửa sổ khác che → trang 'hidden' → Chrome không tải <audio> (giọng Google Dịch không phát)
+  '--disable-features=CalculateNativeWinOcclusion', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required', 'about:blank',
 ], { stdio: 'ignore' });
 let result;
 try {
@@ -91,6 +94,13 @@ try {
   };
   const send = (method, params = {}) => new Promise((res) => { const i = ++id; pending.set(i, res); ws.send(JSON.stringify({ id: i, method, params })); });
   await send('Runtime.enable');
+  // BLOCK_GTTS=1: chặn file đọc của Google Dịch (giả lập mất mạng / Google chặn) để test đường dự phòng giọng máy
+  if (process.env.BLOCK_GTTS) {
+    await send('Network.enable');
+    await send('Network.setBlockedURLs', { urls: ['*translate_tts*'] });
+  }
+  // tab chưa từng hiển thị thì Chrome hoãn tải <audio> (giọng Google Dịch không phát) → luôn đưa tab lên trước
+  await send('Page.bringToFront');
   await sleep(2500);
   const r = await send('Runtime.evaluate', { expression: page, awaitPromise: true, returnByValue: true, userGesture: true, timeout: 400000 });
   result = r.result?.result?.value;
@@ -104,8 +114,8 @@ try {
 }
 
 if (result) {
-  console.log(`${partner} · ${android ? 'giả lập Android' : 'Chrome desktop'} · chế độ ${result.mode} · đúng ${result.score} · trễ TB ${result.avgLat}ms · phiên treo ${result.stuck}`);
-  for (const s of result.steps) console.log(`  ${s.res.padEnd(13)} ${s.said.padEnd(17)} lượt ${s.turnBefore.padEnd(8)} trễ ${String(s.lat ?? '-').padStart(5)}ms → ${s.got.slice(0, 220)}`);
+  console.log(`${partner} · ${android ? 'giả lập Android' : 'Chrome desktop'} · chế độ ${result.mode} · đúng ${result.score} · trễ tới lúc nghe TB: Việt→ngoại ${result.hearViToX}ms, ngoại→Việt ${result.hearXToVi}ms · phiên treo ${result.stuck}`);
+  for (const s of result.steps) console.log(`  ${s.res.padEnd(13)} ${s.said.padEnd(17)} lượt ${s.turnBefore.padEnd(8)} nghe ${String(s.hear ?? '-').padStart(5)}ms → ${s.got.slice(0, 220)}`);
   for (const d of result.diag) console.log('    ' + d.slice(9, 260));
   process.exit(result.steps.every((s) => s.ok || s.res === 'MỜI NÓI LẠI') ? 0 : 1);
 }

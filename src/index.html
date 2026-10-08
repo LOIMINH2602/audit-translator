@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Phiên Dịch Audit</title>
 <meta name="theme-color" content="#0B6E5F">
+<!-- Không gửi Referer: file đọc của Google Dịch (translate_tts) trả 404 nếu có Referer. API dịch không cần Referer. -->
+<meta name="referrer" content="no-referrer">
 <link rel="manifest" href="manifest.webmanifest">
 <!-- mở sẵn kết nối HTTPS tới dịch vụ dịch: câu đầu tiên đỡ ~0,3 giây bắt tay TLS trên 4G -->
 <link rel="preconnect" href="https://translate.googleapis.com" crossorigin>
@@ -35,6 +37,12 @@
         <option value="zh-CN">Tiếng Trung</option>
         <option value="ja-JP">Tiếng Nhật</option>
         <option value="ko-KR">Tiếng Hàn</option>
+      </select>
+      <span class="label">Giọng đọc bản dịch</span>
+      <select id="ttsEngine">
+        <option value="auto">Tự động — giọng máy chậm thì dùng giọng Google</option>
+        <option value="system">Giọng của máy</option>
+        <option value="google">Giọng Google Dịch (qua mạng)</option>
       </select>
       <span class="label">Tốc độ đọc bản dịch</span>
       <select id="ttsRate">

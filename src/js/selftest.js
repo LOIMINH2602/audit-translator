@@ -7,7 +7,7 @@ import { $, copyText } from './ui.js';
 import { NAMES, SAMPLES, TEST_PROMPTS, APP_VERSION } from './config.js';
 import { createRecognizer, probeParallel, supported as srSupported } from './recognizer.js';
 import { translate, detectTranslate } from './translate.js';
-import { pickVoice, voices, speak, supported as ttsSupported } from './tts.js';
+import { pickVoice, voices, speak, warmUp, supported as ttsSupported } from './tts.js';
 import { judge, similarity } from './scoring.js';
 import { isInAppBrowser } from './env.js';
 import { diag, recentLog } from './diagnostics.js';
@@ -176,16 +176,22 @@ async function checkTts() {
   if (!ttsSupported) return;
   add('info', `Số giọng đọc máy liệt kê: ${voices().length}`);
   const missing = [];
+  const slow = [];
   for (const lang of LANGS) {
     const voice = pickVoice(lang);
     showStatus(`Đang đọc thử tiếng ${NAMES[lang]}... Hãy nghe qua tai nghe/loa.`);
+    await warmUp(lang); // như màn 1:1: chọn giọng (máy / Google Dịch) trước khi đọc thật, để đo đúng giọng sẽ dùng
     let startedMs = null;
+    let usedVoice = null;
     let error = null;
     await Promise.race([
-      speak(SAMPLES[lang], lang, { onStart: (ms) => (startedMs = ms), onError: (e) => (error = e) }),
+      speak(SAMPLES[lang], lang, { onStart: (ms, v) => { startedMs = ms; usedVoice = v; }, onError: (e) => (error = e) }),
       sleep(9000),
     ]);
-    const where = `giọng: ${voice ? voice.name : 'không có trong danh sách'}`;
+    const where = `đọc bằng: ${usedVoice || (voice ? voice.name : 'không rõ')}`;
+    if (startedMs !== null && startedMs > 1500) {
+      slow.push(`${NAMES[lang]} ${(startedMs / 1000).toFixed(1)}s`);
+    }
     if (error || startedMs === null) {
       add('bad', `Đọc tiếng ${NAMES[lang]}: không phát được (${error || 'không bắt đầu'}); ${where}`);
       missing.push(NAMES[lang]);
@@ -198,6 +204,7 @@ async function checkTts() {
       missing.push(NAMES[lang]);
     }
   }
+  if (slow.length) issue('Giọng đọc bắt đầu chậm (trên 1,5 giây): ' + slow.join(', ') + '. Ở màn 1:1 chọn "Giọng Google Dịch" ở ô Giọng đọc, hoặc tải giọng đọc ngoại tuyến cho tiếng đó trong Cài đặt → Chuyển văn bản thành giọng nói.');
   if (missing.length) {
     issue(
       'Giọng đọc chưa dùng được cho: ' + missing.join(', ') +

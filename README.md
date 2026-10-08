@@ -29,6 +29,8 @@ Kết quả test đầu-cuối 08/10/2026 (giọng Google TTS, 8 lượt mỗi t
 
 Chế độ luân phiên trên Chrome Android cần thêm (bản 2026-10-08.2, sau test thật): Android không báo TTS đọc xong nên app dò `speechSynthesis.speaking`; mic mở lại ngay khi đọc xong và lọc tiếng vọng bằng `isEcho`; mỗi phiên nhận diện là đối tượng mới, có watchdog thay phiên treo. Giả lập Android (`run.mjs <tiếng> android`, người kia trả lời 0,3s sau khi nghe xong): Anh 8/8, Trung/Nhật/Hàn 7/8; bản trước chỉ 3/8.
 
+Giọng đọc (bản 2026-10-08.4): chiều Việt → tiếng nước ngoài chậm trên Android vì Chrome nạp lại giọng mỗi lần đổi tiếng và giọng nước ngoài thường chưa tải về máy. Chế độ Tự động đọc thử không tiếng khi bấm Bắt đầu; giọng máy chậm (> 0,9s) thì dùng file đọc của Google Dịch (`translate_tts`, cần `<meta name="referrer" content="no-referrer">`). Giả lập: Việt→ngoại 3,3s → ~0,5–0,7s.
+
 Mọi lượt nói luân phiên bình thường đều đúng. Sai chỉ rơi vào: 1 người nói 2 câu liền bằng tiếng Trung/Nhật/Hàn (recognizer sai tiếng ra chuỗi rác trông hợp lệ), và câu rất ngắn "Đúng rồi" khi đối tác là tiếng Trung ở chế độ song song.
 
 ## Cấu trúc

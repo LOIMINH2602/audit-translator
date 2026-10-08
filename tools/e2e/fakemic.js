@@ -63,9 +63,14 @@
       return orig[m].call(this);
     };
   }
+  // 5. giọng máy tiếng nước ngoài chậm: Lợi Minh báo chiều Việt → nước ngoài rất chậm (giọng chưa tải về máy,
+  //    Chrome Android setLanguage mỗi lần đổi tiếng). Giả lập: chỉ giọng không phải tiếng Việt chờ __slowTts ms.
   const speak = speechSynthesis.speak.bind(speechSynthesis);
   speechSynthesis.speak = (u) => {
-    if (window.__androidLike) u.onend = null;
-    return speak(u);
+    if (!window.__androidLike) return speak(u);
+    u.onend = null;
+    const slow = window.__slowTts ?? 2500;
+    if (slow && !/^vi/i.test(u.lang)) setTimeout(() => speak(u), slow);
+    else speak(u);
   };
 })();

@@ -4,7 +4,7 @@
 import { $, copyText, timeNow } from './ui.js';
 import { NAMES, SAMPLES, APP_VERSION } from './config.js';
 import { translate } from './translate.js';
-import { pickVoice, voices, onVoicesChanged, speak, supported as ttsSupported } from './tts.js';
+import { pickVoice, voices, onVoicesChanged, speak, engineFor, setTtsLog, supported as ttsSupported } from './tts.js';
 
 const lines = [];
 const MAX_LINES = 300;
@@ -35,7 +35,8 @@ function renderVoices() {
     const row = document.createElement('div');
     row.className = 'voice-row';
     const label = document.createElement('span');
-    label.textContent = `${NAMES[lang]} (${lang}): ` + (v ? `${v.name} [${v.lang}]${v.localService ? ' · offline' : ''}` : 'THIẾU GIỌNG');
+    label.textContent = `${NAMES[lang]} (${lang}): ` + (v ? `${v.name} [${v.lang}]${v.localService ? ' · offline' : ''}` : 'THIẾU GIỌNG MÁY') +
+      ` · đọc bằng: ${engineFor(lang) === 'google' ? 'Google Dịch' : 'giọng máy'}`;
     if (!v) label.className = 'missing';
     const btn = document.createElement('button');
     btn.className = 'ghost small';
@@ -54,6 +55,7 @@ function renderVoices() {
 }
 
 export function initDiagnostics() {
+  setTtsLog(diag);
   renderVoices();
   onVoicesChanged(renderVoices);
   diag('UA: ' + navigator.userAgent);

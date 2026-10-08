@@ -107,3 +107,14 @@ tra response thật). Claude Code cần tự verify toàn bộ luồng dịch + 
   - Preconnect tới Google/MyMemory; Google quá 3,5s thì chuyển thẳng MyMemory (trước: dự phòng thử lại Google lần 2).
 - Giả lập Android sau sửa: Anh 8/8, Nhật 8/8, Trung 7/8, Hàn 7/8. Song song không đổi.
 - Muốn đổi máy về dò lại song song: xoá dữ liệu trang (hoặc localStorage `audit.parallel.v1`).
+
+## Cập nhật 08/10/2026 tối — "chiều Việt → tiếng nước ngoài rất chậm" (bản 2026-10-08.4)
+- **Loại trừ bằng số đo:** dịch Google 2 chiều như nhau (~105–115ms trung vị, 10 lần mỗi chiều × 4 tiếng). Nhận diện: đã xác nhận trong mã nguồn Chromium (SpeechRecognitionImpl.java + Blink) Android có bắn `speechend` khi continuous=false → bản chốt câu theo speechend có tác dụng trên điện thoại.
+- **Nguyên nhân (mã nguồn Chromium TtsPlatformImpl.java):** Chrome Android gọi `TextToSpeech.setLanguage()` mỗi khi câu đọc đổi tiếng so với câu trước — hội thoại 1:1 đổi tiếng ở mọi câu; giọng nước ngoài chưa tải về máy thì Google TTS tổng hợp qua mạng → chậm. Giọng Việt có sẵn trên máy tiếng Việt → chiều ngược lại nhanh. Khớp đúng triệu chứng. (Giả thuyết "chọn nhầm giọng mạng" đã kiểm và bác: Chrome Android chỉ liệt kê 1 giọng/locale.)
+- **Sửa — giọng đọc tự chọn (tts.js):** chế độ Tự động: bấm Bắt đầu thì đọc thử không tiếng (volume 0) giọng máy tiếng đối tác, chưa bắt đầu sau 0,9s → dùng **file đọc của Google Dịch** (translate_tts qua `<audio>`, bắt đầu sau ~0,2–0,5s); mỗi câu thật cũng đo lại. Google lỗi → giọng máy, 5 phút không thử lại Google (tránh lặp chịu cả 2 lần chờ). Trang ẩn (tắt màn hình) → giọng máy luôn (Chrome không tải `<audio>` khi trang ẩn). Câu > 180 ký tự cắt đoạn, tải trước đoạn sau. Chọn tay được: Tự động / Giọng máy / Giọng Google.
+- **Bắt buộc:** `<meta name="referrer" content="no-referrer">` ở index.html — Google trả 404 cho translate_tts nếu có Referer (đã đo).
+- Chế độ song song: bên sai tiếng nghe dở rồi kết thúc không ra chữ thì báo arbiter ngay (trước: chờ tới maxMs 3s → chiều Việt chậm 2,6s; nay ~0,6–1,1s).
+- Tab Tự kiểm tra đọc thử không tiếng trước rồi mới đo → báo đúng giọng sẽ dùng; giọng bắt đầu > 1,5s thì nêu thành vấn đề kèm cách xử lý.
+- **Giả lập Android (giọng máy nước ngoài chậm 2,5s):** bản .3 Việt→ngoại 3,3s / ngoại→Việt 0,5s; bản .4: Anh 0,45s, Trung 0,62s, Nhật 0,66s, Hàn 0,61s (cả 2 chiều cân bằng), đúng 6–8/8 (sai còn lại = 1 người nói 2 câu liền). Đã test: giọng máy nhanh (giữ giọng máy), Google bị chặn (về giọng máy, không lặp), trang ẩn, câu dài 386 ký tự (3 đoạn), tốc độ đọc 1,4× có hiệu lực, Tự kiểm tra, Hội trường.
+- e2e: harness phải chạy Chrome với `--disable-features=CalculateNativeWinOcclusion` (cửa sổ bị che → trang hidden → `<audio>` không tải). `SLOW_TTS`, `BLOCK_GTTS` để test các nhánh.
+- Chưa kiểm chứng trên điện thoại thật: độ trễ thật của giọng máy nước ngoài trên máy Lợi Minh (biên bản ghi `TTS +…ms · <giọng>`).
