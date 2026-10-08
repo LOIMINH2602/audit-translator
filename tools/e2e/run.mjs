@@ -3,8 +3,9 @@
 // - Micro giả (fakemic.js): phát mẫu giọng Google TTS qua AudioContext → track đưa vào recognizer.
 // - "android": giả lập Chrome Android/thiết bị chỉ cho 1 phiên nhận diện (phiên mới huỷ phiên cũ — hành vi
 //   đã đo thật trên Chrome). App sẽ dò ra và chạy chế độ luân phiên.
-// - Kịch bản 8 lượt: luân phiên thường, câu ngắn "Đúng rồi", và 2 lần 1 người nói 2 câu liền.
-//   Khi app "mời nói lại", người nói lặp lại câu đó 1 lần.
+// - Kịch bản 7 lượt: đối tác trình bày 3 đoạn ngắt quãng (ngừng 1,2s), tôi nói 2 đoạn, câu ngắn "Đúng rồi",
+//   luân phiên thường, và đối tác nói tiếp sau khi đã nghe bản dịch (app phải mời nói lại rồi nhận đúng).
+//   Khi app "mời nói lại", người nói lặp lại 1 lần. GAP=ms đổi khoảng ngừng giữa các đoạn.
 // Biến môi trường: SLOW_TTS=ms (giọng máy tiếng nước ngoài chậm, mặc định 2500; 0 = nhanh), BLOCK_GTTS=1.
 // Cần: Chrome cài sẵn (đổi đường dẫn bằng biến CHROME), mạng ra Google (nhận diện + dịch + tải mẫu giọng).
 // Mẫu giọng tải về tools/e2e/audio/ (không commit).
@@ -60,10 +61,21 @@ for (const f of readdirSync(audioDir)) if (f.endsWith('.mp3')) clips[f.slice(0, 
 
 // ---------- kịch bản ----------
 const p = partner === 'en-US' ? 'en' : partner === 'zh-CN' ? 'zh-CN' : partner.slice(0, 2);
-const script = [['me', 'vi-7'], ['partner', `${p}-1`], ['me', 'vi-24'], ['partner', `${p}-2`], ['partner', `${p}-3`], ['me', 'vi-25'], ['me', 'vi-23'], ['partner', `${p}-4`]];
+const gap = Number(process.env.GAP ?? 1200);
+// SCRIPT='[["partner",["en-1",1200,"en-2"]]]' chạy kịch bản riêng; FULLDIAG=1 in toàn bộ nhật ký.
+const script = process.env.SCRIPT ? JSON.parse(process.env.SCRIPT) : [
+  ['me', 'vi-7'],
+  ['partner', [`${p}-1`, gap, `${p}-2`, gap, `${p}-3`]],
+  ['me', 'vi-24'],
+  ['partner', `${p}-4`],
+  ['me', ['vi-25', gap, 'vi-23']],
+  ['partner', `${p}-2`],
+  ['partner', `${p}-3`],
+];
 const page =
   `window.__CLIPS=${JSON.stringify(clips)};\n` + readFileSync(join(here, 'fakemic.js'), 'utf8') +
   `\nwindow.__slowTts=${Number(process.env.SLOW_TTS ?? 2500)};` +
+  `\nwindow.__FULLDIAG=${Boolean(process.env.FULLDIAG)};` +
   `\nwindow.__CFG=${JSON.stringify({ partner, android, script })};\n` + readFileSync(join(here, 'e2e.js'), 'utf8');
 
 // ---------- server + Chrome ----------
@@ -101,6 +113,11 @@ try {
   }
   // tab chưa từng hiển thị thì Chrome hoãn tải <audio> (giọng Google Dịch không phát) → luôn đưa tab lên trước
   await send('Page.bringToFront');
+  // cửa sổ test luôn ở trạng thái thường, đặt trên cùng (thu nhỏ → trang hidden)
+  try {
+    const w = await send('Browser.getWindowForTarget', {});
+    if (w.result) await send('Browser.setWindowBounds', { windowId: w.result.windowId, bounds: { windowState: 'normal' } });
+  } catch (_) {}
   await sleep(2500);
   const r = await send('Runtime.evaluate', { expression: page, awaitPromise: true, returnByValue: true, userGesture: true, timeout: 400000 });
   result = r.result?.result?.value;
@@ -114,8 +131,9 @@ try {
 }
 
 if (result) {
+  if (result.hiddenMs) console.log(`⚠ KHÔNG HỢP LỆ: trang bị ẩn ${result.hiddenMs}ms trong lúc chạy (cửa sổ Chrome bị thu nhỏ/che) — số đo độ trễ không đại diện điện thoại, chạy lại.`);
   console.log(`${partner} · ${android ? 'giả lập Android' : 'Chrome desktop'} · chế độ ${result.mode} · đúng ${result.score} · trễ tới lúc nghe TB: Việt→ngoại ${result.hearViToX}ms, ngoại→Việt ${result.hearXToVi}ms · phiên treo ${result.stuck}`);
-  for (const s of result.steps) console.log(`  ${s.res.padEnd(13)} ${s.said.padEnd(17)} lượt ${s.turnBefore.padEnd(8)} nghe ${String(s.hear ?? '-').padStart(5)}ms → ${s.got.slice(0, 220)}`);
+  for (const s of result.steps) console.log(`  ${s.res.padEnd(13)} ${s.said.padEnd(26)} lượt ${s.turnBefore.padEnd(8)} ${s.segs}/${s.parts} đoạn · nghe ${String(s.hear ?? '-').padStart(5)}ms → ${s.got.slice(0, 260)}`);
   for (const d of result.diag) console.log('    ' + d.slice(9, 260));
   process.exit(result.steps.every((s) => s.ok || s.res === 'MỜI NÓI LẠI') ? 0 : 1);
 }

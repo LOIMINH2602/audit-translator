@@ -23,7 +23,8 @@ const QUICK_END_LIMIT = 3;
 const START_TIMEOUT_MS = 2500;
 
 // onSpeechEnd (tuỳ chọn): máy báo người nói đã dừng (VAD), thường sớm hơn final nhiều trên Android.
-export function createRecognizer({ name, lang, track = null, continuous = true, onFinal, onInterim, onNoMatch, onStart, onSpeechEnd, onError, onLog }) {
+// onSpeechStart (tuỳ chọn): máy báo vừa có tiếng nói — sớm hơn chữ tạm vài trăm ms.
+export function createRecognizer({ name, lang, track = null, continuous = true, onFinal, onInterim, onNoMatch, onStart, onSpeechStart, onSpeechEnd, onError, onLog }) {
   if (!SR) return null;
   let rec = null; // đối tượng của phiên hiện tại
   let curLang = lang;
@@ -40,7 +41,7 @@ export function createRecognizer({ name, lang, track = null, continuous = true, 
     if (!rec) return;
     const r = rec;
     rec = null;
-    r.onstart = r.onresult = r.onerror = r.onend = r.onspeechend = null;
+    r.onstart = r.onresult = r.onerror = r.onend = r.onspeechend = r.onspeechstart = null;
     try { r.abort(); } catch (_) {}
     if (clone) clone.stop();
     clone = null;
@@ -63,6 +64,9 @@ export function createRecognizer({ name, lang, track = null, continuous = true, 
 
     r.onspeechend = () => {
       if (live() && onSpeechEnd) onSpeechEnd();
+    };
+    r.onspeechstart = () => {
+      if (live() && onSpeechStart) onSpeechStart();
     };
 
     r.onresult = (e) => {
@@ -160,6 +164,14 @@ export function createRecognizer({ name, lang, track = null, continuous = true, 
     // dừng ngay và bỏ kết quả đang chờ (TTS sắp phát / đổi lượt); sự kiện muộn của phiên cũ bị bỏ qua
     pause() {
       halt(false);
+    },
+    // bỏ phiên hiện tại (kể cả final đang chờ) và mở phiên mới ngay: dùng khi đã chốt câu bằng chữ tạm, để
+    // không phải chờ Android trả final rồi mới nghe tiếp (người nói có thể nói tiếp ngay đoạn sau)
+    restart() {
+      if (!want) return;
+      sawText = false;
+      clearTimeout(timer);
+      begin();
     },
     setLang(l) {
       curLang = l;

@@ -118,3 +118,12 @@ tra response thật). Claude Code cần tự verify toàn bộ luồng dịch + 
 - **Giả lập Android (giọng máy nước ngoài chậm 2,5s):** bản .3 Việt→ngoại 3,3s / ngoại→Việt 0,5s; bản .4: Anh 0,45s, Trung 0,62s, Nhật 0,66s, Hàn 0,61s (cả 2 chiều cân bằng), đúng 6–8/8 (sai còn lại = 1 người nói 2 câu liền). Đã test: giọng máy nhanh (giữ giọng máy), Google bị chặn (về giọng máy, không lặp), trang ẩn, câu dài 386 ký tự (3 đoạn), tốc độ đọc 1,4× có hiệu lực, Tự kiểm tra, Hội trường.
 - e2e: harness phải chạy Chrome với `--disable-features=CalculateNativeWinOcclusion` (cửa sổ bị che → trang hidden → `<audio>` không tải). `SLOW_TTS`, `BLOCK_GTTS` để test các nhánh.
 - Chưa kiểm chứng trên điện thoại thật: độ trễ thật của giọng máy nước ngoài trên máy Lợi Minh (biên bản ghi `TTS +…ms · <giọng>`).
+
+## Cập nhật 08/10/2026 tối — "để người đối diện trình bày hết, ngắt quãng 3–4 lần" (bản 2026-10-08.5)
+- **Vấn đề:** chế độ luân phiên cắt lượt sau mỗi lần người nói ngừng (~1s): dịch, đọc, chuyển sang người kia → phần nói tiếp bị nghe bằng sai tiếng, mất.
+- **Sửa — giữ lượt (phiên dịch nối tiếp), cả 2 chế độ:** mỗi đoạn nói xong được dịch và hiện chữ ngay nhưng CHƯA đọc; mic vẫn nghe tiếp người đó. Im lặng hẳn `holdMs` (ô "Kết thúc lượt nói khi im lặng", mặc định 2 giây; 1 / 1,5 / 2 / 3 / 4) mới đọc bản dịch cả lượt rồi chuyển lượt. Có tiếng nói (`speechstart`) hoặc chữ tạm mới → hoãn kết thúc lượt. Chạm ô lượt khi đang giữ lượt = đọc bản dịch ngay. Chế độ song song: người kia bắt đầu nói → đọc ngay bản dịch lượt trước.
+- Chốt 1 đoạn bằng speechend thì mở phiên nhận diện mới ngay (`recognizer.restart()`), không chờ final của Android → người nói tiếp ngay ít bị mất đầu câu.
+- Đánh đổi: sau đoạn cuối, người nghe chờ thêm `holdMs` mới nghe bản dịch (đo: ~2,2–3,3s với mặc định 2s). Muốn nhanh: chọn 1–1,5s hoặc chạm ô lượt.
+- Google Dịch (giọng đọc) lỗi 1 lần chỉ đọc câu đó bằng giọng máy; lỗi 2 lần liên tiếp mới chuyển hẳn sang giọng máy 5 phút (trước: 1 lần đã chuyển 5 phút).
+- Test e2e kịch bản mới (đối tác 3 đoạn ngừng 1,2s; tôi 2 đoạn; câu ngắn; nói tiếp sau khi nghe bản dịch), giả lập Android: Anh/Nhật/Hàn 7/7 hoặc 6/7, Trung 6/7 — mọi lượt nhiều đoạn đều giữ trọn (3/3, 2/2 đoạn); sai còn lại: đối tác tiếng Trung/Nhật nói tiếp SAU khi đã nghe bản dịch (giới hạn cũ). Song song: Anh 7/7, Nhật 7/7.
+- e2e: kịch bản nhiều đoạn (`SCRIPT`, `GAP`), `FULLDIAG`; tự báo "KHÔNG HỢP LỆ" nếu trang test bị ẩn trong lúc chạy.

@@ -31,6 +31,8 @@ Chế độ luân phiên trên Chrome Android cần thêm (bản 2026-10-08.2, s
 
 Giọng đọc (bản 2026-10-08.4): chiều Việt → tiếng nước ngoài chậm trên Android vì Chrome nạp lại giọng mỗi lần đổi tiếng và giọng nước ngoài thường chưa tải về máy. Chế độ Tự động đọc thử không tiếng khi bấm Bắt đầu; giọng máy chậm (> 0,9s) thì dùng file đọc của Google Dịch (`translate_tts`, cần `<meta name="referrer" content="no-referrer">`). Giả lập: Việt→ngoại 3,3s → ~0,5–0,7s.
 
+Giữ lượt (bản 2026-10-08.5): người đang nói có thể ngắt quãng nhiều lần — mỗi đoạn được dịch và hiện ngay, im lặng hẳn 2 giây (chỉnh được) app mới đọc bản dịch cả lượt và chuyển lượt; chạm ô lượt để đọc ngay.
+
 Mọi lượt nói luân phiên bình thường đều đúng. Sai chỉ rơi vào: 1 người nói 2 câu liền bằng tiếng Trung/Nhật/Hàn (recognizer sai tiếng ra chuỗi rác trông hợp lệ), và câu rất ngắn "Đúng rồi" khi đối tác là tiếng Trung ở chế độ song song.
 
 ## Cấu trúc

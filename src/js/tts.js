@@ -31,9 +31,12 @@ let log = () => {};
 let current = null; // <audio> đang phát (để cancel)
 // Google Dịch vừa lỗi (mất mạng / bị chặn): GOOGLE_COOLDOWN_MS không chuyển tiếng nào sang Google nữa, tránh lặp
 // "Google lỗi → giọng máy chậm → lại Google" mà câu nào cũng chịu cả 2 lần chờ.
+// Chỉ nghỉ khi lỗi 2 lần liên tiếp: 1 lần chập chờn mạng không đáng bắt dùng giọng máy chậm suốt 5 phút.
 const GOOGLE_COOLDOWN_MS = 5 * 60 * 1000;
 let googleFailedAt = -Infinity;
-const googleCooling = () => performance.now() - googleFailedAt < GOOGLE_COOLDOWN_MS;
+let googleFails = 0; // số lần lỗi liên tiếp
+const googleCooling = () => googleFails >= 2 && performance.now() - googleFailedAt < GOOGLE_COOLDOWN_MS;
+const googleFailed = () => { googleFails++; googleFailedAt = performance.now(); };
 
 export function setTtsLog(fn) { log = fn; }
 export function getMode() { return mode; }
@@ -239,11 +242,15 @@ export async function speak(text, lang, { rate = 1, onStart, onError, onEnd } = 
 
   if (engine === 'google') {
     const r = await speakGoogle(text, lang, { rate, onStart });
-    if (r.startMs !== null) return end(r.how);
+    if (r.startMs !== null) {
+      googleFails = 0;
+      return end(r.how);
+    }
     if (onError) onError('google ' + r.how);
-    googleFailedAt = performance.now();
+    googleFailed();
     if (!synth) return end(r.how);
-    if (mode === 'auto') remember(lang, 'system', 'Google Dịch không phát được');
+    // lỗi lần đầu: câu này đọc bằng giọng máy, câu sau vẫn thử Google; lỗi liên tiếp mới chuyển hẳn
+    if (mode === 'auto' && googleCooling()) remember(lang, 'system', 'Google Dịch lỗi 2 lần liên tiếp');
     engine = 'system'; // đọc lại câu này bằng giọng máy
   }
 
@@ -254,7 +261,8 @@ export async function speak(text, lang, { rate = 1, onStart, onError, onEnd } = 
       if (googleCooling()) return end(r.how);
       remember(lang, 'google', `giọng máy không phát (${r.how})`);
       const g = await speakGoogle(text, lang, { rate, onStart }); // đọc lại câu này bằng Google
-      if (g.startMs === null) googleFailedAt = performance.now();
+      if (g.startMs === null) googleFailed();
+      else googleFails = 0;
       return end(g.how);
     }
     if (r.startMs !== null && r.startMs > SLOW_MS) remember(lang, 'google', `giọng máy bắt đầu sau ${r.startMs}ms`);
