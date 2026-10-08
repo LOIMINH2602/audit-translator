@@ -232,7 +232,10 @@ export async function speak(text, lang, { rate = 1, onStart, onError, onEnd } = 
   const end = (how) => onEnd && onEnd(Math.round(performance.now() - t0), how);
   let engine = engineFor(lang);
   // Trang bị ẩn (tắt màn hình, chuyển app): Chrome không tải <audio> → dùng giọng máy luôn, không chờ hết giờ.
-  if (engine === 'google' && synth && document.visibilityState === 'hidden') engine = 'system';
+  if (engine === 'google' && synth && document.visibilityState === 'hidden') {
+    engine = 'system';
+    log(`Trang đang ẩn → đọc ${lang} bằng giọng máy`);
+  }
 
   if (engine === 'google') {
     const r = await speakGoogle(text, lang, { rate, onStart });

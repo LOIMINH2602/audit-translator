@@ -67,6 +67,6 @@
   const ok = out.steps.filter((x) => x.ok && x.hear != null);
   out.hearViToX = avg(ok.filter((x) => x.said.startsWith('me:')).map((x) => x.hear));
   out.hearXToVi = avg(ok.filter((x) => x.said.startsWith('partner:')).map((x) => x.hear));
-  out.diag = $('diagLog').textContent.split('\n').filter((l) => window.__FULLDIAG || /QUYẾT|Dò song|CẢNH BÁO|LỖI|không ra chữ|Giọng đọc/.test(l));
+  out.diag = $('diagLog').textContent.split('\n').filter((l) => window.__FULLDIAG || /QUYẾT|Dò song|CẢNH BÁO|LỖI|không ra chữ|Giọng đọc|Trang đang ẩn/.test(l));
   return out;
 })()
