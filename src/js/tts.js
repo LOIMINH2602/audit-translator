@@ -36,11 +36,13 @@ export function maxSpeakMs(text) {
 // onStart(msTừLúcGọi, voice) được gọi khi âm thanh thực sự bắt đầu — dùng đo độ trễ TTS.
 // Chrome Android hay không bắn onend → trước đây mic tắt thêm vài giây sau khi đọc xong, câu trả lời của
 // người kia bị mất. Nay theo dõi speechSynthesis.speaking: đã nói rồi mà hết nói là xong (trễ tối đa ~100ms).
-export function speak(text, lang, { onStart, onError, onEnd } = {}) {
+// rate: tốc độ đọc (1 = bình thường). Đọc nhanh hơn rút ngắn thời gian mỗi lượt.
+export function speak(text, lang, { rate = 1, onStart, onError, onEnd } = {}) {
   return new Promise((resolve) => {
     if (!synth || !text) return resolve();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = lang;
+    u.rate = rate;
     const voice = pickVoice(lang);
     if (voice) u.voice = voice;
 
@@ -60,7 +62,7 @@ export function speak(text, lang, { onStart, onError, onEnd } = {}) {
       started = true;
       if (onStart) onStart(Math.round(performance.now() - t0), voice);
     };
-    const guard = setTimeout(() => finish('hết giờ'), maxSpeakMs(text));
+    const guard = setTimeout(() => finish('hết giờ'), maxSpeakMs(text) / Math.min(rate, 1));
     const poll = setInterval(() => {
       const ms = performance.now() - t0;
       if (synth.speaking && !synth.pending) {

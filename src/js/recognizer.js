@@ -22,7 +22,8 @@ const QUICK_END_LIMIT = 3;
 // Thêm watchdog: gọi start mà START_TIMEOUT_MS không có onstart thì bỏ đối tượng đó, tạo cái mới, thử lại.
 const START_TIMEOUT_MS = 2500;
 
-export function createRecognizer({ name, lang, track = null, continuous = true, onFinal, onInterim, onNoMatch, onStart, onError, onLog }) {
+// onSpeechEnd (tuỳ chọn): máy báo người nói đã dừng (VAD), thường sớm hơn final nhiều trên Android.
+export function createRecognizer({ name, lang, track = null, continuous = true, onFinal, onInterim, onNoMatch, onStart, onSpeechEnd, onError, onLog }) {
   if (!SR) return null;
   let rec = null; // đối tượng của phiên hiện tại
   let curLang = lang;
@@ -39,7 +40,7 @@ export function createRecognizer({ name, lang, track = null, continuous = true, 
     if (!rec) return;
     const r = rec;
     rec = null;
-    r.onstart = r.onresult = r.onerror = r.onend = null;
+    r.onstart = r.onresult = r.onerror = r.onend = r.onspeechend = null;
     try { r.abort(); } catch (_) {}
     if (clone) clone.stop();
     clone = null;
@@ -58,6 +59,10 @@ export function createRecognizer({ name, lang, track = null, continuous = true, 
       startedAt = Date.now();
       log('start ' + r.lang);
       if (onStart) onStart();
+    };
+
+    r.onspeechend = () => {
+      if (live() && onSpeechEnd) onSpeechEnd();
     };
 
     r.onresult = (e) => {

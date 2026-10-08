@@ -21,7 +21,16 @@ import { diag } from './diagnostics.js';
 
 // Mở lại mic ngay khi đọc xong (không chờ dư âm): đuôi bản dịch lọt vào mic thì isEcho lọc trong ECHO_WINDOW_MS.
 const ECHO_WINDOW_MS = 3000;
+// Chế độ luân phiên: Android chốt câu (final) muộn 1–2 giây sau khi người nói dừng. Khi máy báo hết tiếng nói
+// (speechend) mà chừng này chưa có final thì dùng luôn chữ tạm. Khác cách "chữ đứng yên" đã bỏ: speechend chỉ
+// đến khi người nói thật sự dừng, nên không chốt giữa câu.
+const SPEECHEND_GRACE_MS = 350;
+const PROBE_KEY = 'audit.parallel.v1';
+const RATE_KEY = 'audit.ttsRate';
 const WHO = { me: 'Tôi', partner: 'Đối tác' };
+// localStorage có thể bị chặn (chế độ ẩn danh...): lỗi thì coi như không có
+const readPref = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
+const writePref = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
 const other = (side) => (side === 'partner' ? 'me' : 'partner');
 
 export function initDialogue() {
@@ -39,6 +48,7 @@ export function initDialogue() {
   let listenAt = 0; // lúc yêu cầu mở lại mic
   let lastEntry = null;
   let interimText = '';
+  let speechEndTimer = null;
   let lastSpoken = { text: '', lang: '', endAt: -1e9 }; // bản dịch vừa đọc, để lọc tiếng vọng
   const echoOf = (text, lang) =>
     lang === lastSpoken.lang && performance.now() - lastSpoken.endAt < ECHO_WINDOW_MS && isEcho(text, lastSpoken.text);
@@ -88,11 +98,22 @@ export function initDialogue() {
           name: 'luân-phiên',
           lang: langOf(turn),
           continuous: false,
-          onFinal: (text) => { if (!busy && text) handle([{ side: turn, text }]); },
+          onFinal: (text) => {
+            clearTimeout(speechEndTimer);
+            if (!busy && text) handle([{ side: turn, text }], 'final');
+          },
+          onSpeechEnd: () => {
+            if (busy) return;
+            clearTimeout(speechEndTimer);
+            speechEndTimer = setTimeout(() => {
+              if (!busy && running && interimText) handle([{ side: turn, text: interimText }], 'hết tiếng nói');
+            }, SPEECHEND_GRACE_MS);
+          },
           onInterim: (text) => {
             if (busy) return;
             $('dlgOrig').textContent = text;
             if (text.trim() === interimText) return;
+            clearTimeout(speechEndTimer); // còn chữ mới: người nói chưa dứt
             interimText = text.trim();
             lastInterimAt = performance.now();
           },
@@ -130,6 +151,7 @@ export function initDialogue() {
     if (!running) return;
     interims.partner = interims.me = '';
     interimText = '';
+    clearTimeout(speechEndTimer);
     arbiter.reset();
     listenAt = performance.now();
     if (mode === 'turn') recs.one.setLang(langOf(turn));
@@ -141,8 +163,9 @@ export function initDialogue() {
     all().forEach((r) => r.pause());
   }
 
-  async function handle(cands) {
+  async function handle(cands, how = 'final') {
     busy = true;
+    clearTimeout(speechEndTimer);
     const tStart = performance.now();
     const waitMs = lastInterimAt ? Math.round(tStart - lastInterimAt) : 0; // từ lúc dứt lời tới lúc có câu
     // Tắt mic ngay: không để recognizer tự mở phiên mới trong lúc dịch rồi bị huỷ giữa chừng (Android dễ treo).
@@ -165,7 +188,7 @@ export function initDialogue() {
       const usable = cs.filter((c) => c.r);
       const win = pickSpeaker(usable, turn);
       diag(
-        `QUYẾT ĐỊNH (${mode}, lượt ${WHO[turn]}, chờ câu ${waitMs}ms): ${win ? WHO[win.side] : 'không bên nào'} từ ` +
+        `QUYẾT ĐỊNH (${mode}, lượt ${WHO[turn]}, ${how}, chờ câu ${waitMs}ms): ${win ? WHO[win.side] : 'không bên nào'} từ ` +
         cs.map((c) => `${c.side}[${c.lang}→dò ${c.detected || '?'}]:"${c.text}"${c.err ? ' LỖI ' + c.err : ''}`).join(' vs ')
       );
 
@@ -189,7 +212,7 @@ export function initDialogue() {
       $('dlgTrans').textContent = out;
       setError($('dlgErr'), pickVoice(to) ? '' : `Không thấy giọng đọc ${NAMES[to]} trong danh sách (vẫn thử đọc). Xem mục Chẩn đoán.`);
 
-      const entry = { time: timeNow(), tag: WHO[win.side], src: win.text, out, info: `chờ câu ${waitMs}ms · dịch ${win.r.ms}ms · ${win.r.engine}` };
+      const entry = { time: timeNow(), tag: WHO[win.side], src: win.text, out, info: `chờ câu ${waitMs}ms${how === 'final' ? '' : ' (' + how + ')'} · dịch ${win.r.ms}ms · ${win.r.engine}` };
       log.push(entry);
       lastEntry = entry;
       renderLog($('dlgLog'), log);
@@ -199,6 +222,7 @@ export function initDialogue() {
       // Mic đã tắt từ đầu hàm nên TTS phát không bị mic nghe lại.
       showStatus('Đang đọc bản dịch…');
       await speak(out, to, {
+        rate: Number($('ttsRate').value) || 1,
         onError: (err) => diag(`LỖI TTS ${to}: ${err}`),
         onStart: (ms, voice) => {
           entry.info += ` · TTS +${ms}ms${voice ? ' · ' + voice.name : ''}`;
@@ -262,7 +286,13 @@ export function initDialogue() {
     $('dlgStatus').textContent = 'Đang kiểm tra micro…';
     try {
       if (!probe) {
-        probe = await probeParallel(partnerLang(), 'vi-VN');
+        // Máy đã dò ra "không song song" thì nhớ luôn (localStorage), không mất ~2 giây dò lại mỗi lần bấm Bắt đầu.
+        if (readPref(PROBE_KEY) === 'no') {
+          probe = { parallel: false, reason: 'đã dò trước đây' };
+        } else {
+          probe = await probeParallel(partnerLang(), 'vi-VN');
+          if (!probe.denied) writePref(PROBE_KEY, probe.parallel ? 'yes' : 'no');
+        }
         diag(`Dò song song: ${probe.parallel ? 'ĐƯỢC' : 'KHÔNG'} (${probe.reason})`);
         if (probe.denied) {
           probe = null;
@@ -319,6 +349,9 @@ export function initDialogue() {
   };
 
   $('dlgCopy').onclick = () => copyText(logToText(log), $('dlgCopy'));
+
+  if (readPref(RATE_KEY)) $('ttsRate').value = readPref(RATE_KEY);
+  $('ttsRate').onchange = () => writePref(RATE_KEY, $('ttsRate').value);
 
   // cho bảng Tự kiểm tra / test tự động đọc trạng thái
   return { state: () => ({ running, mode, turn, busy, log, switches }) };

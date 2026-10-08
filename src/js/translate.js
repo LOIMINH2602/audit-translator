@@ -40,7 +40,8 @@ async function viaGoogle(text, from, to, timeoutMs) {
 // Dò ngôn ngữ + dịch trong 1 lần gọi Google (sl=auto). Dùng để biết chuỗi nhận diện có đúng tiếng của
 // recognizer không. Google lỗi thì dịch bằng translate() với tiếng nguồn giả định, detected = null.
 // Trả về { text, detected, engine, ms }.
-export async function detectTranslate(text, assumedFrom, to, { timeoutMs = 6000 } = {}) {
+// Google thường trả trong 0,1–0,3 giây; quá 3,5 giây là mạng/endpoint có vấn đề → chuyển dự phòng luôn.
+export async function detectTranslate(text, assumedFrom, to, { timeoutMs = 3500 } = {}) {
   const t0 = performance.now();
   try {
     const url = `${GOOGLE}?client=gtx&sl=auto&tl=${code(to)}&dt=t&q=${encodeURIComponent(text)}`;
@@ -48,14 +49,14 @@ export async function detectTranslate(text, assumedFrom, to, { timeoutMs = 6000 
     const out = d[0].map((x) => x[0]).join('');
     return { text: out, detected: d[2] || null, engine: 'google', ms: Math.round(performance.now() - t0) };
   } catch (_) {
-    const r = await translate(text, assumedFrom, to, { timeoutMs });
+    const r = await translate(text, assumedFrom, to, { timeoutMs: 6000, only: 'mymemory' }); // Google vừa lỗi: không thử lại
     return { ...r, detected: null, ms: Math.round(performance.now() - t0) };
   }
 }
 
 // Trả về { text, engine, ms } để UI hiển thị độ trễ dịch.
-export async function translate(text, from, to, { timeoutMs = 6000 } = {}) {
-  const engines = [['google', viaGoogle], ['mymemory', viaMyMemory]];
+export async function translate(text, from, to, { timeoutMs = 6000, only = null } = {}) {
+  const engines = [['google', viaGoogle], ['mymemory', viaMyMemory]].filter(([e]) => !only || e === only);
   const t0 = performance.now();
   const errors = [];
   for (const [engine, run] of engines) {

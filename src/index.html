@@ -6,6 +6,9 @@
 <title>Phiên Dịch Audit</title>
 <meta name="theme-color" content="#0B6E5F">
 <link rel="manifest" href="manifest.webmanifest">
+<!-- mở sẵn kết nối HTTPS tới dịch vụ dịch: câu đầu tiên đỡ ~0,3 giây bắt tay TLS trên 4G -->
+<link rel="preconnect" href="https://translate.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://api.mymemory.translated.net" crossorigin>
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="css/app.css">
 </head>
@@ -32,6 +35,12 @@
         <option value="zh-CN">Tiếng Trung</option>
         <option value="ja-JP">Tiếng Nhật</option>
         <option value="ko-KR">Tiếng Hàn</option>
+      </select>
+      <span class="label">Tốc độ đọc bản dịch</span>
+      <select id="ttsRate">
+        <option value="1">Bình thường</option>
+        <option value="1.2" selected>Nhanh</option>
+        <option value="1.4">Rất nhanh</option>
       </select>
       <p class="sub" style="margin:0">App tự nhận ai đang nói và dịch sang tiếng còn lại. Nếu máy chỉ cho nghe 1 tiếng mỗi lúc, app nghe luân phiên: dịch xong 1 câu thì tự chuyển sang nghe người kia.</p>
     </div>

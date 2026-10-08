@@ -98,3 +98,12 @@ tra response thật). Claude Code cần tự verify toàn bộ luồng dịch + 
 - Biên bản mỗi câu ghi thời gian từng bước: `chờ câu` (dứt lời → có câu), `dịch`, `TTS +` (độ trễ bắt đầu đọc), `đọc Xs (onend|dò|hết giờ)`, `mic +` (đọc xong → mic nghe lại). Nút **Gửi nhật ký** ở màn 1:1 gửi nhật ký qua Zalo.
 - Đã thử và bỏ: "chốt câu sớm" khi chữ tạm đứng yên 0,9s — làm app chốt giữa câu với chuỗi rác của recognizer sai tiếng, phá phát hiện nhầm lượt.
 - Chưa kiểm chứng trên máy thật: giả thuyết phiên treo, thời gian khởi động phiên thật của Android (xem `mic +` trong biên bản).
+
+## Cập nhật 08/10/2026 tối — "tốc độ dịch rất chậm" (bản 2026-10-08.3)
+- Chưa có nhật ký thật từ điện thoại; sửa các điểm chậm đã biết của Chrome Android, đo bằng giả lập (final đến muộn 1,5 giây như Android):
+  - **Chốt câu theo `speechend`**: máy báo hết tiếng nói mà 350ms chưa có final thì dùng chữ tạm. Từ dứt lời tới bản dịch hiện ra: 1,68s → 0,34s (tiếng Anh). Không chốt giữa câu như cách "chữ đứng yên" đã bỏ.
+  - Nhớ kết quả dò song song (localStorage `audit.parallel.v1`): Android không còn mất ~2 giây dò mỗi lần bấm Bắt đầu.
+  - Tốc độ đọc bản dịch chọn được (Bình thường / Nhanh 1,2× mặc định / Rất nhanh), nhớ theo máy.
+  - Preconnect tới Google/MyMemory; Google quá 3,5s thì chuyển thẳng MyMemory (trước: dự phòng thử lại Google lần 2).
+- Giả lập Android sau sửa: Anh 8/8, Nhật 8/8, Trung 7/8, Hàn 7/8. Song song không đổi.
+- Muốn đổi máy về dò lại song song: xoá dữ liệu trang (hoặc localStorage `audit.parallel.v1`).

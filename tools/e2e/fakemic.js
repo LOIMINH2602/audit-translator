@@ -35,6 +35,16 @@
     if (this.__stuck || this.__pending) throw new DOMException('recognition has already started', 'InvalidStateError');
     if (active && active !== this) { const a = active; try { a.abort(); } catch (_) {} }
     active = this;
+    // 4. Android chốt câu chậm: final (và onend sau nó) đến muộn __finalDelay ms sau khi người nói dừng;
+    //    speechend vẫn đến đúng lúc. App phải tự chốt bằng speechend + chữ tạm thì mới nhanh.
+    const delay = window.__finalDelay ?? 1500;
+    const onres = this.onresult, onend = this.onend;
+    let late = false;
+    if (onres) this.onresult = (e) => {
+      const fin = [...e.results].slice(e.resultIndex).some((r) => r.isFinal);
+      if (fin) { late = true; setTimeout(() => onres.call(this, e), delay); } else onres.call(this, e);
+    };
+    if (onend) this.onend = (e) => (late ? setTimeout(() => onend.call(this, e), delay + 50) : onend.call(this, e));
     this.__pending = true;
     this.__t = setTimeout(() => {
       this.__pending = false;

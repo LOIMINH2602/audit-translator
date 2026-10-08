@@ -1,5 +1,5 @@
 // Tăng mỗi lần deploy để biết điện thoại đang chạy bản nào (hiện ở chân trang và đầu báo cáo).
-export const APP_VERSION = '2026-10-08.2 tăng-tốc';
+export const APP_VERSION = '2026-10-08.3 nhanh-hơn';
 
 export const NAMES = {
   'en-US': 'Anh',
