@@ -79,7 +79,7 @@ try {
     await sleep(200);
     ver = await fetch(`http://127.0.0.1:${dbg}/json/version`).then((r) => r.json()).catch(() => null);
   }
-  const tgt = await fetch(`http://127.0.0.1:${dbg}/json/new?${encodeURIComponent(`http://localhost:${PORT}/`)}`, { method: 'PUT' }).then((r) => r.json());
+  const tgt = await fetch(`http://127.0.0.1:${dbg}/json/new?${encodeURIComponent(process.env.BASE_URL || `http://localhost:${PORT}/`)}`, { method: 'PUT' }).then((r) => r.json());
   const ws = new WebSocket(tgt.webSocketDebuggerUrl);
   await new Promise((r) => (ws.onopen = r));
   let id = 0;
@@ -104,8 +104,8 @@ try {
 }
 
 if (result) {
-  console.log(`${partner} · ${android ? 'giả lập Android' : 'Chrome desktop'} · chế độ ${result.mode} · đúng ${result.score}`);
-  for (const s of result.steps) console.log(`  ${s.res.padEnd(13)} ${s.said.padEnd(17)} lượt ${s.turnBefore.padEnd(8)} → ${s.got.slice(0, 110)}`);
+  console.log(`${partner} · ${android ? 'giả lập Android' : 'Chrome desktop'} · chế độ ${result.mode} · đúng ${result.score} · trễ TB ${result.avgLat}ms · phiên treo ${result.stuck}`);
+  for (const s of result.steps) console.log(`  ${s.res.padEnd(13)} ${s.said.padEnd(17)} lượt ${s.turnBefore.padEnd(8)} trễ ${String(s.lat ?? '-').padStart(5)}ms → ${s.got.slice(0, 220)}`);
   for (const d of result.diag) console.log('    ' + d.slice(9, 260));
   process.exit(result.steps.every((s) => s.ok || s.res === 'MỜI NÓI LẠI') ? 0 : 1);
 }

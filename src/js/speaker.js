@@ -75,3 +75,19 @@ export function pickSpeaker(cands, expectedSide) {
   }
   return best;
 }
+
+// Mic nghe lại đuôi bản dịch app vừa đọc (tiếng vọng): bỏ câu mà phần lớn từ nằm trong câu vừa đọc.
+// Nhờ lọc này mic được mở lại ngay khi đọc xong, không phải chờ thêm, nên không mất đầu câu trả lời.
+const ECHO_OVERLAP = 0.7;
+
+function tokens(text) {
+  const s = (text || '').toLowerCase().normalize('NFC');
+  return [...(s.match(CJK) || []), ...(s.replace(CJK, ' ').match(/[\p{L}\p{N}]+/gu) || [])];
+}
+
+export function isEcho(heard, spoken) {
+  const h = tokens(heard);
+  if (!h.length || !spoken) return false;
+  const bag = new Set(tokens(spoken));
+  return h.filter((t) => bag.has(t)).length / h.length >= ECHO_OVERLAP;
+}

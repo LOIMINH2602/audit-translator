@@ -20,15 +20,42 @@
     }
     return (t - ctx.currentTime) * 1000;
   };
+  // __androidLike=true giả lập Chrome Android:
+  //  1. chỉ 1 phiên giữ micro: phiên mới huỷ phiên đang chạy (đã đo thật trên Chrome);
+  //  2. khởi động phiên mất ~600ms (gắn dịch vụ nhận diện, tiếng bíp); bị abort/stop trong lúc đó thì phiên TREO:
+  //     không bao giờ bắn sự kiện nào, start() lại trên đối tượng đó ném InvalidStateError (giả thuyết, chưa đo trên máy);
+  //  3. speechSynthesis không bắn onend (hiện tượng hay gặp trên Chrome Android).
   const SR = window.webkitSpeechRecognition;
-  const orig = SR.prototype.start;
+  const orig = { start: SR.prototype.start, abort: SR.prototype.abort, stop: SR.prototype.stop };
   let active = null;
   window.__androidLike = false;
+  const STARTUP_MS = 600;
   SR.prototype.start = function () {
-    if (window.__androidLike) {
-      if (active && active !== this) { const a = active; try { a.abort(); } catch (_) {} }
-      active = this;
-    }
-    return orig.call(this, track.clone());
+    if (!window.__androidLike) return orig.start.call(this, track.clone());
+    if (this.__stuck || this.__pending) throw new DOMException('recognition has already started', 'InvalidStateError');
+    if (active && active !== this) { const a = active; try { a.abort(); } catch (_) {} }
+    active = this;
+    this.__pending = true;
+    this.__t = setTimeout(() => {
+      this.__pending = false;
+      orig.start.call(this, track.clone());
+    }, STARTUP_MS);
+  };
+  for (const m of ['abort', 'stop']) {
+    SR.prototype[m] = function () {
+      if (window.__androidLike && this.__pending) {
+        clearTimeout(this.__t);
+        this.__pending = false;
+        this.__stuck = true;
+        window.__stuckCount = (window.__stuckCount || 0) + 1;
+        return;
+      }
+      return orig[m].call(this);
+    };
+  }
+  const speak = speechSynthesis.speak.bind(speechSynthesis);
+  speechSynthesis.speak = (u) => {
+    if (window.__androidLike) u.onend = null;
+    return speak(u);
   };
 })();

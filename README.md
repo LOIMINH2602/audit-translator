@@ -27,6 +27,8 @@ Kết quả test đầu-cuối 08/10/2026 (giọng Google TTS, 8 lượt mỗi t
 | Song song | 8/8 | 6/8 | 8/8 | 8/8 |
 | Luân phiên (giả lập Android) | 8/8 | 7/8 | 7/8 | 6/8 |
 
+Chế độ luân phiên trên Chrome Android cần thêm (bản 2026-10-08.2, sau test thật): Android không báo TTS đọc xong nên app dò `speechSynthesis.speaking`; mic mở lại ngay khi đọc xong và lọc tiếng vọng bằng `isEcho`; mỗi phiên nhận diện là đối tượng mới, có watchdog thay phiên treo. Giả lập Android (`run.mjs <tiếng> android`, người kia trả lời 0,3s sau khi nghe xong): Anh 8/8, Trung/Nhật/Hàn 7/8; bản trước chỉ 3/8.
+
 Mọi lượt nói luân phiên bình thường đều đúng. Sai chỉ rơi vào: 1 người nói 2 câu liền bằng tiếng Trung/Nhật/Hàn (recognizer sai tiếng ra chuỗi rác trông hợp lệ), và câu rất ngắn "Đúng rồi" khi đối tác là tiếng Trung ở chế độ song song.
 
 ## Cấu trúc

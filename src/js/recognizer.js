@@ -17,109 +17,150 @@ const QUICK_END_LIMIT = 3;
 // onNoMatch (tuỳ chọn): phiên đã nghe ra chữ tạm (interim) nhưng kết thúc không có final nào có chữ. Đo thật: đây là
 // dấu hiệu rõ nhất của nghe sai tiếng (recognizer Anh/Trung/Nhật/Hàn nghe tiếng Việt thường kết thúc như vậy).
 // Tiếng ồn thường không tạo ra chữ tạm nên không kích hoạt.
-export function createRecognizer({ name, lang, track = null, continuous = true, onFinal, onInterim, onNoMatch, onError, onLog }) {
-  if (!SR) return null;
-  const rec = new SR();
-  rec.continuous = continuous;
-  rec.interimResults = true;
-  rec.lang = lang;
+// Mỗi phiên dùng 1 đối tượng SpeechRecognition MỚI, sự kiện của đối tượng cũ bị bỏ qua. Lý do: trên Android, phiên bị
+// abort lúc đang khởi động có thể treo (không bao giờ bắn onend) → start() sau đó ném InvalidStateError mãi, mic chết.
+// Thêm watchdog: gọi start mà START_TIMEOUT_MS không có onstart thì bỏ đối tượng đó, tạo cái mới, thử lại.
+const START_TIMEOUT_MS = 2500;
 
+export function createRecognizer({ name, lang, track = null, continuous = true, onFinal, onInterim, onNoMatch, onStart, onError, onLog }) {
+  if (!SR) return null;
+  let rec = null; // đối tượng của phiên hiện tại
+  let curLang = lang;
   let want = false;
   let startedAt = 0;
   let quickEnds = 0;
   let timer = null;
+  let watchdog = null;
   let sawText = false; // có chữ tạm chưa được final nào có chữ "tiêu thụ"
+  let clone = null;
   const log = (m) => onLog && onLog(`[${name}] ${m}`);
 
-  let clone = null;
-  function safeStart() {
+  function discard() {
+    if (!rec) return;
+    const r = rec;
+    rec = null;
+    r.onstart = r.onresult = r.onerror = r.onend = null;
+    try { r.abort(); } catch (_) {}
+    if (clone) clone.stop();
+    clone = null;
+  }
+
+  function make() {
+    const r = new SR();
+    r.continuous = continuous;
+    r.interimResults = true;
+    r.lang = curLang;
+    const live = () => r === rec;
+
+    r.onstart = () => {
+      if (!live()) return;
+      clearTimeout(watchdog);
+      startedAt = Date.now();
+      log('start ' + r.lang);
+      if (onStart) onStart();
+    };
+
+    r.onresult = (e) => {
+      if (!live()) return;
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const res = e.results[i];
+        const alt = res[0];
+        if (res.isFinal) {
+          log(`final "${alt.transcript.trim()}" conf=${(alt.confidence || 0).toFixed(2)}`);
+          if (alt.transcript.trim()) sawText = false;
+          onFinal(alt.transcript.trim(), alt.confidence || 0);
+        } else {
+          interim += alt.transcript;
+        }
+      }
+      if (interim.trim()) sawText = true;
+      if (interim && onInterim) onInterim(interim);
+    };
+
+    r.onerror = (e) => {
+      if (!live()) return;
+      log('error ' + e.error);
+      if (e.error === 'no-speech' || e.error === 'aborted') return;
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') want = false;
+      onError(e.error);
+    };
+
+    r.onend = () => {
+      if (!live()) return;
+      log('end');
+      clearTimeout(watchdog);
+      rec = null;
+      if (clone) clone.stop();
+      clone = null;
+      const missed = sawText;
+      sawText = false;
+      if (!want) return;
+      if (missed) {
+        log('kết thúc không ra chữ (nghi nghe sai tiếng)');
+        if (onNoMatch) onNoMatch();
+      }
+      // Nếu 2 recognizer giành mic, máy có thể chỉ cho 1 bên sống: bên kia bị ngắt ngay sau khi bật.
+      quickEnds = Date.now() - startedAt < QUICK_END_MS ? quickEnds + 1 : 0;
+      if (quickEnds === QUICK_END_LIMIT) log('CẢNH BÁO: bị ngắt liên tục ngay sau khi bật (có thể thiết bị không cho 2 recognizer chạy song song)');
+      timer = setTimeout(() => want && begin(), quickEnds >= QUICK_END_LIMIT ? RESTART_BACKOFF_MS : RESTART_MS);
+    };
+    return r;
+  }
+
+  function begin() {
+    discard();
+    rec = make();
     const c = track ? track.clone() : null;
     try {
       if (c) rec.start(c);
       else rec.start();
-      if (clone) clone.stop();
       clone = c;
-    } catch (_) {
-      // InvalidStateError: đã đang chạy
+    } catch (e) {
       if (c) c.stop();
+      log('start lỗi ' + e.name);
     }
+    clearTimeout(watchdog);
+    watchdog = setTimeout(() => {
+      if (!want) return;
+      log('CẢNH BÁO: không khởi động được sau ' + START_TIMEOUT_MS / 1000 + ' giây → tạo phiên mới');
+      begin();
+    }, START_TIMEOUT_MS);
   }
 
-  rec.onstart = () => {
-    startedAt = Date.now();
-    log('start ' + rec.lang);
-  };
-
-  rec.onresult = (e) => {
-    let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const r = e.results[i];
-      const alt = r[0];
-      if (r.isFinal) {
-        log(`final "${alt.transcript.trim()}" conf=${(alt.confidence || 0).toFixed(2)}`);
-        if (alt.transcript.trim()) sawText = false;
-        onFinal(alt.transcript.trim(), alt.confidence || 0);
-      } else {
-        interim += alt.transcript;
-      }
-    }
-    if (interim.trim()) sawText = true;
-    if (interim && onInterim) onInterim(interim);
-  };
-
-  rec.onerror = (e) => {
-    log('error ' + e.error);
-    if (e.error === 'no-speech' || e.error === 'aborted') return;
-    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') want = false;
-    onError(e.error);
-  };
-
-  rec.onend = () => {
-    log('end');
-    if (clone) clone.stop();
-    clone = null;
-    const missed = sawText;
+  function halt(graceful) {
+    want = false;
     sawText = false;
-    if (!want) return;
-    if (missed) {
-      log('kết thúc không ra chữ (nghi nghe sai tiếng)');
-      if (onNoMatch) onNoMatch();
+    clearTimeout(timer);
+    clearTimeout(watchdog);
+    if (!rec) return;
+    if (graceful) {
+      // stop(): vẫn nhận nốt final đang chờ; onend sẽ dọn
+      try { rec.stop(); } catch (_) { discard(); }
+    } else {
+      discard();
     }
-    // Nếu 2 recognizer giành mic, máy có thể chỉ cho 1 bên sống: bên kia bị ngắt ngay sau khi bật.
-    quickEnds = Date.now() - startedAt < QUICK_END_MS ? quickEnds + 1 : 0;
-    if (quickEnds === QUICK_END_LIMIT) log('CẢNH BÁO: bị ngắt liên tục ngay sau khi bật (có thể thiết bị không cho 2 recognizer chạy song song)');
-    timer = setTimeout(() => want && safeStart(), quickEnds >= QUICK_END_LIMIT ? RESTART_BACKOFF_MS : RESTART_MS);
-  };
+  }
 
   return {
     start() {
       want = true;
       clearTimeout(timer);
-      const begin = Date.now();
-      safeStart();
-      // Không có sự kiện start sau 3 giây: recognizer này không khởi động được (thường do bị recognizer khác giành mic).
-      setTimeout(() => want && startedAt < begin && log('CẢNH BÁO: không khởi động được sau 3 giây'), 3000);
+      begin();
     },
     // dừng hẳn, vẫn nhận nốt kết quả đang chờ
     stop() {
-      want = false;
-      sawText = false;
-      clearTimeout(timer);
-      try { rec.stop(); } catch (_) {}
+      halt(true);
     },
-    // dừng và bỏ kết quả đang chờ (dùng khi TTS đang phát để mic không nghe lại chính nó)
+    // dừng ngay và bỏ kết quả đang chờ (TTS sắp phát / đổi lượt); sự kiện muộn của phiên cũ bị bỏ qua
     pause() {
-      want = false;
-      // phiên bị huỷ giữa câu: onend đến muộn (có khi sau start() kế tiếp) không được tính là "nghe sai tiếng"
-      sawText = false;
-      clearTimeout(timer);
-      try { rec.abort(); } catch (_) {}
+      halt(false);
     },
     setLang(l) {
-      rec.lang = l;
+      curLang = l;
       sawText = false;
-      // lang chỉ có hiệu lực ở lần start kế tiếp: nếu đang chạy thì abort để onend tự khởi động lại
-      if (want) try { rec.abort(); } catch (_) {}
+      // lang chỉ có hiệu lực ở phiên mới: nếu đang nghe thì mở phiên mới ngay
+      if (want) begin();
     },
   };
 }

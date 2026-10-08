@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { similarity, judge } from '../src/js/scoring.js';
-import { syllables, plausible, pickSpeaker, vietnameseRatio } from '../src/js/speaker.js';
+import { syllables, plausible, pickSpeaker, vietnameseRatio, isEcho } from '../src/js/speaker.js';
 import { isInAppBrowser } from '../src/js/env.js';
 
 test('similarity: bỏ qua hoa/thường, dấu câu, khoảng trắng', () => {
@@ -87,4 +87,14 @@ test('vietnameseRatio: câu tiếng Việt thật = 1, lẫn từ tiếng Anh th
   assert.equal(vietnameseRatio('Xin chào tôi muốn xem hồ sơ hành động khắc phục'), 1);
   assert.ok(vietnameseRatio('UEFA wanna One thành phố Manila house') < 0.5);
   assert.ok(vietnameseRatio('để phim Samsung j8') <= 0.5);
+});
+
+test('isEcho: đuôi bản dịch vừa đọc bị mic nghe lại → bỏ; câu trả lời thật → giữ', () => {
+  const spoken = 'Please show me the quality manual';
+  assert.equal(isEcho('the quality manual', spoken), true);
+  assert.equal(isEcho('please show me the quality manual', spoken), true);
+  assert.equal(isEcho('here is the manual you asked for', spoken), false);
+  assert.equal(isEcho('质量手册', '请出示质量手册'), true);
+  assert.equal(isEcho('在仓库里', '请出示质量手册'), false);
+  assert.equal(isEcho('', spoken), false);
 });

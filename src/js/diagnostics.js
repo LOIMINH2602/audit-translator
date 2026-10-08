@@ -2,7 +2,7 @@
 // nút đọc thử từng tiếng. Phục vụ test thật trên Chrome Android — bấm "Sao chép nhật ký" rồi gửi lại.
 
 import { $, copyText, timeNow } from './ui.js';
-import { NAMES, SAMPLES } from './config.js';
+import { NAMES, SAMPLES, APP_VERSION } from './config.js';
 import { translate } from './translate.js';
 import { pickVoice, voices, onVoicesChanged, speak, supported as ttsSupported } from './tts.js';
 
@@ -67,4 +67,10 @@ export function initDiagnostics() {
     }
   };
   $('diagCopy').onclick = () => copyText(lines.join('\n'), $('diagCopy'));
+  // Gửi nhật ký (Zalo/Messenger...) để xem chậm/sai ở bước nào; máy không có nút chia sẻ thì sao chép.
+  $('dlgShareLog').onclick = () => {
+    const text = `NHẬT KÝ Phiên Dịch Audit — bản ${APP_VERSION}\n` + lines.join('\n');
+    if (navigator.share) navigator.share({ title: 'Nhật ký Phiên Dịch Audit', text }).catch(() => {});
+    else copyText(text, $('dlgShareLog'));
+  };
 }

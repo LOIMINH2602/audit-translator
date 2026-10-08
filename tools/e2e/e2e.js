@@ -1,4 +1,6 @@
 // window.__CFG = { partner: 'en-US', android: false, script: [['partner','en-9'], ['me','vi-7'], ...] }
+// Người nói tiếp theo bắt đầu ngay REPLY_MS sau khi app đọc xong bản dịch (như ngoài đời: nghe xong là trả lời).
+// lat = từ lúc dứt lời tới lúc bản dịch hiện ra.
 (async () => {
   const cfg = window.__CFG;
   await window.__ready;
@@ -18,32 +20,38 @@
     const sw0 = __dialogue.state().switches;
     const ms = await __say([clip]);
     const t0 = Date.now();
+    let tHit = null;
     while (Date.now() - t0 < ms + 9000) {
       const s = __dialogue.state();
-      if (s.log.length > n0 || s.switches > sw0) break;
-      await sleep(100);
+      if (s.log.length > n0 || s.switches > sw0) { tHit = Date.now(); break; }
+      await sleep(50);
     }
-    await sleep(300);
-    while (__dialogue.state().busy) await sleep(100);
+    // người nghe chờ tới khi tiếng đọc bản dịch thật sự tắt (không chờ app), rồi mới tới lượt nói tiếp
+    await sleep(500);
+    while (speechSynthesis.speaking) await sleep(50);
     const s = __dialogue.state();
     const e = s.log.length > n0 ? s.log[s.log.length - 1] : null;
     const tag = side === 'me' ? 'Tôi' : 'Đối tác';
     const res = e ? (e.tag === tag ? 'ĐÚNG' : 'SAI') : s.switches > sw0 ? (s.turn === side ? 'MỜI NÓI LẠI' : 'SAI-LƯỢT') : 'BỎ SÓT';
-    return { said: side + ':' + clip, turnBefore, res, got: e ? `${e.tag}: "${e.src}" → "${e.out}" (${e.info})` : 'KHÔNG DỊCH · ' + $('dlgErr').textContent, turnAfter: s.turn };
+    const lat = tHit ? tHit - (t0 + ms) : null;
+    return { said: side + ':' + clip, turnBefore, res, lat, got: e ? `${e.tag}: "${e.src}" → "${e.out}" (${e.info})` : 'KHÔNG DỊCH · ' + $('dlgErr').textContent, turnAfter: s.turn };
   }
   for (const [side, clip] of cfg.script) {
     let r = await once(side, clip);
     if (r.res === 'MỜI NÓI LẠI') {
-      await sleep(1200);
+      await sleep(cfg.replyMs ?? 300);
       const r2 = await once(side, clip); // người nói lặp lại câu
       r = { ...r2, said: r.said, turnBefore: r.turnBefore, res: 'NÓI LẠI→' + r2.res };
     }
     r.ok = r.res === 'ĐÚNG' || r.res === 'NÓI LẠI→ĐÚNG';
     out.steps.push(r);
-    await sleep(1200);
+    await sleep(cfg.replyMs ?? 300);
   }
   $('dlgToggle').click();
   out.score = out.steps.filter((x) => x.ok).length + '/' + out.steps.length;
+  const lats = out.steps.map((x) => x.lat).filter((x) => x != null);
+  out.avgLat = lats.length ? Math.round(lats.reduce((a, b) => a + b, 0) / lats.length) : null;
+  out.stuck = window.__stuckCount || 0;
   out.diag = $('diagLog').textContent.split('\n').filter((l) => window.__FULLDIAG || /QUYẾT|Dò song|CẢNH BÁO|LỖI|không ra chữ/.test(l));
   return out;
 })()

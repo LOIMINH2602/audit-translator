@@ -88,3 +88,13 @@ tra response thật). Claude Code cần tự verify toàn bộ luồng dịch + 
 - Đã test đầu-cuối trên Chrome desktop 154 bằng micro giả (`tools/e2e/run.mjs`), cả chế độ song song và giả lập Android, 4 tiếng. Tab Tự kiểm tra và màn Hội trường cũng đã chạy thử trọn vẹn.
 - **Chưa kiểm chứng được:** Chrome Android thật có hỗ trợ `start(track)` không (nếu có → điện thoại chạy chế độ song song, tốt hơn); độ chính xác với giọng người thật (test dùng giọng Google TTS); chất lượng giọng đọc trên điện thoại. Tab Tự kiểm tra trên điện thoại sẽ báo máy chạy chế độ nào và tỷ lệ đúng.
 - Giới hạn đã biết: 1 người nói 2 câu liền bằng tiếng Trung/Nhật/Hàn có thể bị dịch nhầm bên (rác của recognizer sai tiếng trông hợp lệ); chế độ luân phiên mất câu nói nhầm lượt (app mời nói lại).
+
+## Trạng thái cập nhật 08/10/2026 chiều — phản hồi test thật trên điện thoại (bản 2026-10-08.2)
+- **Lợi Minh báo:** điện thoại chạy chế độ luân phiên (Android không cho song song), dịch chậm, app không tự chuyển lượt.
+- **Tái hiện được bằng giả lập Android mới trong `tools/e2e/fakemic.js`** (TTS không bắn `onend`, phiên nhận diện khởi động ~600ms và treo nếu bị huỷ lúc đang khởi động, người kia trả lời ngay khi nghe xong bản dịch): bản 2026-10-08.1 chỉ đúng 3/8 câu tiếng Anh.
+- **Nguyên nhân chính:** Chrome Android không báo TTS đọc xong → app giữ mic tắt tới hết thời gian dự phòng (≥5 giây) → câu trả lời của người kia rơi vào lúc mic tắt, mất trắng → app vẫn đứng ở lượt cũ, câu sau bị nghe bằng sai tiếng ("không tự chuyển lượt").
+- **Sửa:** dò `speechSynthesis.speaking` để biết đọc xong trong ~100ms; mở mic ngay, đuôi bản dịch lọt vào mic được lọc bằng `isEcho`; tắt mic ngay khi bắt đầu xử lý câu; mỗi phiên nhận diện dùng đối tượng mới + watchdog 2,5 giây (phiên treo tự thay); ô lượt chỉ hiện "🎤 Mời … nói" khi mic đã thật sự nghe.
+- Kết quả giả lập Android sau sửa: Anh 8/8, Trung 7/8, Nhật 7/8, Hàn 7/8 (sai còn lại đều là 1 người nói 2 câu liền). Song song không đổi.
+- Biên bản mỗi câu ghi thời gian từng bước: `chờ câu` (dứt lời → có câu), `dịch`, `TTS +` (độ trễ bắt đầu đọc), `đọc Xs (onend|dò|hết giờ)`, `mic +` (đọc xong → mic nghe lại). Nút **Gửi nhật ký** ở màn 1:1 gửi nhật ký qua Zalo.
+- Đã thử và bỏ: "chốt câu sớm" khi chữ tạm đứng yên 0,9s — làm app chốt giữa câu với chuỗi rác của recognizer sai tiếng, phá phát hiện nhầm lượt.
+- Chưa kiểm chứng trên máy thật: giả thuyết phiên treo, thời gian khởi động phiên thật của Android (xem `mic +` trong biên bản).

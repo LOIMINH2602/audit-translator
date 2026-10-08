@@ -14,12 +14,13 @@ import { NAMES } from './config.js';
 import { createRecognizer, probeParallel, supported } from './recognizer.js';
 import { createArbiter } from './arbiter.js';
 import { detectTranslate } from './translate.js';
-import { pickSpeaker, syllables } from './speaker.js';
+import { pickSpeaker, syllables, isEcho } from './speaker.js';
 import { parseGlossary, applyGlossary } from './glossary.js';
 import { speak, pickVoice, cancel as cancelSpeech } from './tts.js';
 import { diag } from './diagnostics.js';
 
-const TAIL_MS = 300; // chờ đuôi âm thanh TTS tắt hẳn rồi mới mở lại mic
+// Mở lại mic ngay khi đọc xong (không chờ dư âm): đuôi bản dịch lọt vào mic thì isEcho lọc trong ECHO_WINDOW_MS.
+const ECHO_WINDOW_MS = 3000;
 const WHO = { me: 'Tôi', partner: 'Đối tác' };
 const other = (side) => (side === 'partner' ? 'me' : 'partner');
 
@@ -33,6 +34,14 @@ export function initDialogue() {
   let switches = 0; // số lần tự chuyển lượt (chế độ luân phiên)
   let recs = {}; // parallel: { partner, me }; turn: { one }
   const interims = { partner: '', me: '' };
+  // đo thời gian từng bước của 1 câu (hiện trong biên bản + nhật ký) để biết chậm ở đâu
+  let lastInterimAt = 0; // lần cuối chữ tạm thay đổi
+  let listenAt = 0; // lúc yêu cầu mở lại mic
+  let lastEntry = null;
+  let interimText = '';
+  let lastSpoken = { text: '', lang: '', endAt: -1e9 }; // bản dịch vừa đọc, để lọc tiếng vọng
+  const echoOf = (text, lang) =>
+    lang === lastSpoken.lang && performance.now() - lastSpoken.endAt < ECHO_WINDOW_MS && isEcho(text, lastSpoken.text);
 
   const partnerLang = () => $('partnerLang').value;
   const langOf = (side) => (side === 'partner' ? partnerLang() : 'vi-VN');
@@ -59,8 +68,10 @@ export function initDialogue() {
           track: probe.track,
           continuous: false,
           onFinal: (text) => { if (!busy) arbiter.push(side, text); },
+          onStart: onListening,
           onInterim: (text) => {
             if (busy) return;
+            lastInterimAt = performance.now();
             arbiter.interim(side);
             interims[side] = text;
             // hiện chuỗi dài hơn trong 2 bên (bên sai tiếng thường ngắn/rỗng)
@@ -78,9 +89,17 @@ export function initDialogue() {
           lang: langOf(turn),
           continuous: false,
           onFinal: (text) => { if (!busy && text) handle([{ side: turn, text }]); },
-          onInterim: (text) => { if (!busy) $('dlgOrig').textContent = text; },
+          onInterim: (text) => {
+            if (busy) return;
+            $('dlgOrig').textContent = text;
+            if (text.trim() === interimText) return;
+            interimText = text.trim();
+            lastInterimAt = performance.now();
+          },
+          onStart: onListening,
           onNoMatch: () => {
             if (busy || !running) return;
+            if (echoOf(interimText, langOf(turn))) return diag(`Bỏ tiếng vọng (chữ tạm): "${interimText}"`);
             diag(`QUYẾT ĐỊNH (turn, lượt ${WHO[turn]}): nghe ra chữ tạm nhưng không có câu → nghi bên kia đang nói`);
             switchTurn();
           },
@@ -93,13 +112,29 @@ export function initDialogue() {
 
   const all = () => Object.values(recs);
 
+  // mic thực sự nghe lại sau khi đọc xong bản dịch: ghi độ trễ mở lại vào câu vừa dịch
+  function onListening() {
+    showStatus();
+    if (!listenAt) return;
+    const ms = Math.round(performance.now() - listenAt);
+    listenAt = 0;
+    diag(`Mic nghe lại sau ${ms}ms`);
+    if (lastEntry && lastEntry.waitMic) {
+      lastEntry.waitMic = false;
+      lastEntry.info += ` · mic +${ms}ms`;
+      renderLog($('dlgLog'), log);
+    }
+  }
+
   function listen() {
     if (!running) return;
     interims.partner = interims.me = '';
+    interimText = '';
     arbiter.reset();
+    listenAt = performance.now();
     if (mode === 'turn') recs.one.setLang(langOf(turn));
     all().forEach((r) => r.start());
-    showStatus();
+    showStatus('Đang mở mic…'); // "Mời … nói" chỉ hiện khi mic thật sự nghe (onListening)
   }
 
   function pauseAll() {
@@ -108,9 +143,18 @@ export function initDialogue() {
 
   async function handle(cands) {
     busy = true;
-    let relisten = false;
+    const tStart = performance.now();
+    const waitMs = lastInterimAt ? Math.round(tStart - lastInterimAt) : 0; // từ lúc dứt lời tới lúc có câu
+    // Tắt mic ngay: không để recognizer tự mở phiên mới trong lúc dịch rồi bị huỷ giữa chừng (Android dễ treo).
+    pauseAll();
+    let relisten = true;
     try {
-      const cs = cands.map((c) => ({ ...c, lang: langOf(c.side) }));
+      const all0 = cands.map((c) => ({ ...c, lang: langOf(c.side) }));
+      const cs = all0.filter((c) => !echoOf(c.text, c.lang));
+      if (!cs.length) {
+        diag('Bỏ tiếng vọng: ' + all0.map((c) => `"${c.text}"`).join(' vs '));
+        return;
+      }
       await Promise.all(
         cs.map((c) =>
           detectTranslate(c.text, c.lang, langOf(other(c.side)))
@@ -121,7 +165,7 @@ export function initDialogue() {
       const usable = cs.filter((c) => c.r);
       const win = pickSpeaker(usable, turn);
       diag(
-        `QUYẾT ĐỊNH (${mode}, lượt ${WHO[turn]}): ${win ? WHO[win.side] : 'không bên nào'} từ ` +
+        `QUYẾT ĐỊNH (${mode}, lượt ${WHO[turn]}, chờ câu ${waitMs}ms): ${win ? WHO[win.side] : 'không bên nào'} từ ` +
         cs.map((c) => `${c.side}[${c.lang}→dò ${c.detected || '?'}]:"${c.text}"${c.err ? ' LỖI ' + c.err : ''}`).join(' vs ')
       );
 
@@ -130,6 +174,7 @@ export function initDialogue() {
           setError($('dlgErr'), 'Dịch không thành công (mạng chậm hoặc dịch vụ bận). Nói lại câu vừa rồi.');
         } else if (mode === 'turn') {
           busy = false;
+          relisten = false;
           switchTurn();
         } else {
           setError($('dlgErr'), 'Chưa nghe rõ, mời nói lại.');
@@ -144,15 +189,14 @@ export function initDialogue() {
       $('dlgTrans').textContent = out;
       setError($('dlgErr'), pickVoice(to) ? '' : `Không thấy giọng đọc ${NAMES[to]} trong danh sách (vẫn thử đọc). Xem mục Chẩn đoán.`);
 
-      const entry = { time: timeNow(), tag: WHO[win.side], src: win.text, out, info: `dịch ${win.r.ms}ms · ${win.r.engine}` };
+      const entry = { time: timeNow(), tag: WHO[win.side], src: win.text, out, info: `chờ câu ${waitMs}ms · dịch ${win.r.ms}ms · ${win.r.engine}` };
       log.push(entry);
+      lastEntry = entry;
       renderLog($('dlgLog'), log);
       $('dlgCopy').disabled = false;
 
       turn = other(win.side);
-      relisten = true;
-      // Mic phải tắt hẳn khi TTS phát, nếu không sẽ nghe lại chính bản dịch.
-      pauseAll();
+      // Mic đã tắt từ đầu hàm nên TTS phát không bị mic nghe lại.
       showStatus('Đang đọc bản dịch…');
       await speak(out, to, {
         onError: (err) => diag(`LỖI TTS ${to}: ${err}`),
@@ -160,8 +204,13 @@ export function initDialogue() {
           entry.info += ` · TTS +${ms}ms${voice ? ' · ' + voice.name : ''}`;
           renderLog($('dlgLog'), log);
         },
+        onEnd: (ms, end) => {
+          entry.info += ` · đọc ${(ms / 1000).toFixed(1)}s (${end})`;
+          renderLog($('dlgLog'), log);
+        },
       });
-      await new Promise((res) => setTimeout(res, TAIL_MS));
+      lastSpoken = { text: out, lang: to, endAt: performance.now() };
+      entry.waitMic = true;
     } catch (e) {
       diag('LỖI xử lý câu: ' + (e && e.message));
     } finally {
@@ -192,13 +241,17 @@ export function initDialogue() {
     }
     if (text) {
       $('dlgStatus').textContent = text;
+      if (mode === 'turn') {
+        turnBtn.textContent = text === 'Đang mở mic…' ? `Đang mở mic cho ${WHO[turn]}… — chạm để đổi` : `🔊 ${text}`;
+        turnBtn.className = 'turn wait';
+      }
       return;
     }
     if (mode === 'parallel') {
       $('dlgStatus').textContent = `Đang nghe cả hai chiều · Việt ↔ ${NAMES[partnerLang()]} · tự nhận người nói`;
     } else {
       $('dlgStatus').textContent = 'Nghe luân phiên · dịch xong tự chuyển lượt';
-      turnBtn.textContent = `Đang nghe: ${WHO[turn]} (tiếng ${NAMES[langOf(turn)]}) — chạm để đổi`;
+      turnBtn.textContent = `🎤 Mời ${WHO[turn]} nói (tiếng ${NAMES[langOf(turn)]}) — chạm để đổi`;
       turnBtn.className = 'turn ' + turn;
     }
   }

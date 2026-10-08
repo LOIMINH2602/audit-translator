@@ -78,4 +78,5 @@ pre.diag{margin:0;background:var(--bg);border:1px solid var(--line);border-radiu
 /* ô "Đang nghe: ..." ở chế độ luân phiên — to, dễ chạm để đổi lượt */
 button.turn{width:100%;padding:14px 12px;border-radius:10px;font:inherit;font-weight:700;font-size:15px;cursor:pointer;border:2px solid var(--accent);background:var(--soft);color:var(--accent)}
 button.turn.partner{border-color:var(--warn);background:var(--warn-bg);color:var(--warn)}
+button.turn.wait{border-style:dashed;opacity:.7}
 button.turn[hidden]{display:none}
