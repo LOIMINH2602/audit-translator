@@ -1,0 +1,10 @@
+ja-JP ← vi-7: "は" [ja] interim@1344 final@4747
+ja-JP ← vi-8: "" [] interim@1251 final@null
+ja-JP ← vi-21: "マイ" [ja] interim@1247 final@4269
+ja-JP ← vi-22: "" [] interim@1424 final@null
+ja-JP ← vi-23: "アイム ちょっと" [ja] interim@1192 final@4488
+ja-JP ← vi-24: "ロンソーイ" [ja] interim@1376 final@1955
+ja-JP ← vi-25: "こんにゃんこる" [ja] interim@1302 final@4844
+ja-JP ← vi-26: "ちゃ" [ja] interim@1304 final@4551
+ja-JP ← vi-w1: "死んじゃう どうせ" [ja] interim@1254 final@3505
+ja-JP ← vi-w3: "" [] interim@1187 final@null

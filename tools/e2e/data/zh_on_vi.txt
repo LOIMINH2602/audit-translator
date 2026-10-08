@@ -1,0 +1,10 @@
+zh-CN ← vi-7: "性交多文宣布" [zh-CN] interim@1380 final@3834
+zh-CN ← vi-8: "" [] interim@1270 final@null
+zh-CN ← vi-21: "finite" [en] interim@1280 final@2700
+zh-CN ← vi-22: "I phone六" [zh-CN] interim@1127 final@1676
+zh-CN ← vi-23: "Angelababy" [vi] interim@1223 final@3732
+zh-CN ← vi-24: "龙所以" [zh-CN] interim@1388 final@1755
+zh-CN ← vi-25: "" [] interim@1338 final@null
+zh-CN ← vi-26: "兄弟们" [zh-CN] interim@1222 final@3197
+zh-CN ← vi-w1: "" [] interim@1305 final@null
+zh-CN ← vi-w3: "微软这对线数对这个" [zh-CN] interim@1256 final@3140

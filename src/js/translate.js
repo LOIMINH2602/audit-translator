@@ -37,6 +37,22 @@ async function viaGoogle(text, from, to, timeoutMs) {
   return d[0].map((x) => x[0]).join('');
 }
 
+// Dò ngôn ngữ + dịch trong 1 lần gọi Google (sl=auto). Dùng để biết chuỗi nhận diện có đúng tiếng của
+// recognizer không. Google lỗi thì dịch bằng translate() với tiếng nguồn giả định, detected = null.
+// Trả về { text, detected, engine, ms }.
+export async function detectTranslate(text, assumedFrom, to, { timeoutMs = 6000 } = {}) {
+  const t0 = performance.now();
+  try {
+    const url = `${GOOGLE}?client=gtx&sl=auto&tl=${code(to)}&dt=t&q=${encodeURIComponent(text)}`;
+    const d = await getJson(url, timeoutMs);
+    const out = d[0].map((x) => x[0]).join('');
+    return { text: out, detected: d[2] || null, engine: 'google', ms: Math.round(performance.now() - t0) };
+  } catch (_) {
+    const r = await translate(text, assumedFrom, to, { timeoutMs });
+    return { ...r, detected: null, ms: Math.round(performance.now() - t0) };
+  }
+}
+
 // Trả về { text, engine, ms } để UI hiển thị độ trễ dịch.
 export async function translate(text, from, to, { timeoutMs = 6000 } = {}) {
   const engines = [['google', viaGoogle], ['mymemory', viaMyMemory]];

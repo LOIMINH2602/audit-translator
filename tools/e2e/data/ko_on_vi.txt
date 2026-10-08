@@ -1,0 +1,10 @@
+ko-KR ← vi-7: "" [] interim@1414 final@null
+ko-KR ← vi-8: "" [] interim@1328 final@null
+ko-KR ← vi-21: "" [] interim@1306 final@null
+ko-KR ← vi-22: "How million number now" [en] interim@1471 final@2603
+ko-KR ← vi-23: "I'm your does and bean Bon 김찬우 박상철" [ko] interim@1239 final@4044
+ko-KR ← vi-24: "농소" [ko] interim@1480 final@1958
+ko-KR ← vi-25: "공연 그릇 나왔다 왜 안 또 안 나오라고 홈" [ko] interim@1547 final@4237
+ko-KR ← vi-26: "" [] interim@1351 final@null
+ko-KR ← vi-w1: "신짜오" [ko] interim@1253 final@1770
+ko-KR ← vi-w3: "" [] interim@null final@null

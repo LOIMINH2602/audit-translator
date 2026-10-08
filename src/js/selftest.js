@@ -1,12 +1,12 @@
 // Tab "Tự kiểm tra": chạy toàn bộ phép thử trên máy người dùng, tự chấm đúng/sai, xuất báo cáo tiếng Việt
 // để gửi lại. Người dùng không cần tự đánh giá hay mô tả lỗi.
-//   Phần 1 (tự động): môi trường, 2 recognizer chạy song song, dịch 8 chiều, giọng đọc 5 tiếng.
-//   Phần 2 (đọc to): 6 câu mẫu; app biết câu đúng nên tự chấm bên nào nghe đúng, chế độ phân xử nào chọn đúng.
+//   Phần 1 (tự động): môi trường, dò nghe song song/luân phiên, dịch 8 chiều, giọng đọc 5 tiếng.
+//   Phần 2 (đọc to): câu mẫu; app biết câu đúng nên tự chấm nghe đúng không, nhận đúng người nói không.
 
 import { $, copyText } from './ui.js';
 import { NAMES, SAMPLES, TEST_PROMPTS, APP_VERSION } from './config.js';
-import { createRecognizer, supported as srSupported } from './recognizer.js';
-import { translate } from './translate.js';
+import { createRecognizer, probeParallel, supported as srSupported } from './recognizer.js';
+import { translate, detectTranslate } from './translate.js';
 import { pickVoice, voices, speak, supported as ttsSupported } from './tts.js';
 import { judge, similarity } from './scoring.js';
 import { isInAppBrowser } from './env.js';
@@ -95,58 +95,52 @@ async function checkMicPermission() {
   }
 }
 
-// 2 recognizer start cùng lúc trên cùng mic, xem cả hai có sống không.
-// Trả về true nếu recognizer không dùng được (micro/mạng hỏng) — khi đó bỏ qua bài đọc câu mẫu.
-async function checkDualRecognizers(partnerLang) {
-  if (!srSupported) return true;
-  showStatus('Đang thử mở 2 recognizer cùng lúc (4 giây)...');
-  const ev = { vi: [], partner: [] };
-  const mk = (side, lang) =>
-    createRecognizer({
-      name: side,
-      lang,
-      onFinal: () => {},
-      onError: (e) => ev[side].push('error ' + e),
-      onLog: (m) => ev[side].push(m),
-    });
-  const a = mk('partner', partnerLang);
-  const b = mk('vi', 'vi-VN');
-  a.start();
-  b.start();
-  await sleep(4000);
-  a.stop();
-  b.stop();
-  await sleep(400);
-
-  const started = (s) => ev[s].some((m) => / start /.test(m));
-  const ends = (s) => ev[s].filter((m) => / end$/.test(m)).length;
-  const denied = [...ev.vi, ...ev.partner].some((m) => /not-allowed|service-not-allowed/.test(m));
-  const sv = started('vi');
-  const sp = started('partner');
-  const all = [...ev.vi, ...ev.partner].join(' ');
-  if (denied) {
-    add('bad', 'Micro bị từ chối khi thử nhận diện.');
-    issue('Chưa cho phép micro cho trang này.');
-  } else if (/audio-capture/.test(all)) {
-    add('bad', 'Chrome không lấy được tiếng từ micro (lỗi audio-capture).');
-    issue('Chrome không lấy được tiếng từ micro. Kiểm tra: micro đang bị app khác chiếm (cuộc gọi, ghi âm, Zalo/Messenger đang mở micro), hoặc tai nghe Bluetooth đang ở chế độ chỉ phát nhạc không có micro. Thử rút/ngắt tai nghe và dùng micro máy.');
-  } else if (/error network/.test(all)) {
-    add('bad', 'Không kết nối được dịch vụ nhận diện giọng nói của Google (lỗi network).');
-    issue('Điện thoại không kết nối được dịch vụ nhận diện giọng nói của Google. Kiểm tra mạng Wi-Fi/4G.');
-  } else if (/language-not-supported/.test(all)) {
-    add('bad', 'Máy chưa hỗ trợ nhận diện một trong các ngôn ngữ (lỗi language-not-supported).');
-    issue(`Máy chưa hỗ trợ nhận diện tiếng Việt hoặc tiếng ${NAMES[partnerLang]}. Cài đặt → Ứng dụng → Google → Giọng nói / Nhận diện giọng nói → Ngôn ngữ → tải thêm.`);
-  } else if (sv && sp && ends('vi') < 3 && ends('partner') < 3) {
-    add('ok', `Cả 2 recognizer (Việt + ${NAMES[partnerLang]}) cùng khởi động và chạy ổn định.`);
-  } else if (sv && sp) {
-    add('warn', `Cả 2 recognizer khởi động nhưng bị ngắt liên tục (Việt ${ends('vi')} lần, ${NAMES[partnerLang]} ${ends('partner')} lần trong 4 giây).`);
-    issue('Hai recognizer giành mic và ngắt nhau liên tục: tự nhận diện người nói sẽ không ổn định.');
-  } else {
-    add('bad', `Chỉ ${sv ? 'recognizer Việt' : sp ? 'recognizer ' + NAMES[partnerLang] : 'không recognizer nào'} khởi động được (Việt: ${sv ? 'có' : 'KHÔNG'}, ${NAMES[partnerLang]}: ${sp ? 'có' : 'KHÔNG'}).`);
-    issue('Máy chỉ cho 1 recognizer chạy tại một thời điểm: cách tự nhận diện người nói bằng 2 recognizer không dùng được. Cần chuyển sang 1 recognizer + nút chọn chiều nói.');
+// Dò máy có cho 2 recognizer song song không (chính hàm app dùng khi bấm Bắt đầu), rồi thử 1 recognizer
+// mỗi tiếng 3 giây để phân loại lỗi micro/mạng/gói ngôn ngữ.
+// Trả về { blocked, probe }: blocked = nhận diện không dùng được → bỏ qua bài đọc câu mẫu.
+async function checkRecognition(partnerLang) {
+  if (!srSupported) return { blocked: true, probe: null };
+  showStatus('Đang dò khả năng nghe song song (2 giây)...');
+  const probe = await probeParallel(partnerLang, 'vi-VN');
+  diag(`SELFTEST dò song song: ${probe.parallel} (${probe.reason})`);
+  if (probe.denied) {
+    add('bad', 'Micro bị từ chối.');
+    issue('Chưa cho phép micro cho trang này. Chrome → biểu tượng ổ khóa cạnh địa chỉ → Quyền → Micro → Cho phép.');
+    return { blocked: true, probe };
   }
-  diag('SELFTEST dual: ' + JSON.stringify(ev));
-  return denied || /audio-capture|error network|language-not-supported/.test(all);
+  if (probe.parallel) add('ok', `Máy cho 2 recognizer nghe song song (Việt + ${NAMES[partnerLang]}): màn 1:1 dùng chế độ tự nhận người nói song song.`);
+  else add('info', `Máy chỉ cho 1 recognizer mỗi lúc (${probe.reason}): màn 1:1 dùng chế độ nghe luân phiên.`);
+
+  const errs = [];
+  for (const lang of ['vi-VN', partnerLang]) {
+    showStatus(`Đang thử nhận diện tiếng ${NAMES[lang]} (3 giây)...`);
+    const ev = [];
+    const r = createRecognizer({ name: 'thử-' + lang, lang, onFinal: () => {}, onError: (e) => ev.push('error ' + e), onLog: (m) => ev.push(m) });
+    r.start();
+    await sleep(3000);
+    r.stop();
+    await sleep(400);
+    const started = ev.some((m) => / start /.test(m));
+    const bad = ev.filter((m) => /^error /.test(m));
+    add(started ? 'ok' : 'bad', `Nhận diện tiếng ${NAMES[lang]}: ${started ? 'khởi động được' : 'KHÔNG khởi động được'}${bad.length ? ' (' + bad.join(', ') + ')' : ''}`);
+    errs.push(...ev);
+  }
+  const all = errs.join(' ');
+  let blocked = false;
+  if (/not-allowed|service-not-allowed/.test(all)) {
+    issue('Chưa cho phép micro cho trang này.');
+    blocked = true;
+  } else if (/audio-capture/.test(all)) {
+    issue('Chrome không lấy được tiếng từ micro. Kiểm tra: micro đang bị app khác chiếm (cuộc gọi, ghi âm, Zalo/Messenger đang mở micro), hoặc tai nghe Bluetooth đang ở chế độ chỉ phát nhạc không có micro. Thử ngắt tai nghe và dùng micro máy.');
+    blocked = true;
+  } else if (/error network/.test(all)) {
+    issue('Điện thoại không kết nối được dịch vụ nhận diện giọng nói của Google. Kiểm tra mạng Wi-Fi/4G.');
+    blocked = true;
+  } else if (/language-not-supported/.test(all)) {
+    issue(`Máy chưa hỗ trợ nhận diện tiếng Việt hoặc tiếng ${NAMES[partnerLang]}. Cài đặt → Ứng dụng → Google → Giọng nói → Ngôn ngữ → tải thêm.`);
+    blocked = true;
+  }
+  return { blocked, probe };
 }
 
 async function checkTranslation() {
@@ -213,82 +207,100 @@ async function checkTts() {
 }
 
 // ---------- Phần 2: đọc to câu mẫu ----------
+// Chạy đúng chế độ màn 1:1 sẽ dùng. Song song: cả 2 recognizer nghe, chấm pickSpeaker có chọn đúng bên.
+// Luân phiên: recognizer nghe tiếng của bên đến lượt; thêm 2 câu "nói nhầm lượt" để đo app có phát hiện
+// được và tự chuyển bên không (câu không khớp phải bị loại).
 
-async function checkSpeaking(partnerLang) {
+async function checkSpeaking(partnerLang, probe) {
   if (!srSupported) return;
-  const go = await ask('Phần cuối: đọc to 6 câu mẫu (mất khoảng 2 phút). Hãy ở nơi yên tĩnh, đọc bình thường như khi audit.', ['Bắt đầu đọc', 'Bỏ qua phần này']);
+  const parallel = Boolean(probe && probe.parallel);
+  const vi = TEST_PROMPTS['vi-VN'];
+  const pa = TEST_PROMPTS[partnerLang];
+  const order = []; // [bên nói, câu, bên app đang nghe]
+  for (let i = 0; i < 3; i++) order.push(['me', vi[i], 'me'], ['partner', pa[i], 'partner']);
+  if (!parallel) order.push(['me', vi[0], 'partner'], ['partner', pa[1], 'me']);
+
+  const go = await ask(`Phần cuối: đọc to ${order.length} câu mẫu (khoảng 2 phút). Hãy ở nơi yên tĩnh, đọc bình thường như khi audit.`, ['Bắt đầu đọc', 'Bỏ qua phần này']);
   if (go === 1) {
     add('info', 'Bỏ qua bài đọc câu mẫu.');
     return;
   }
-
-  let cur = null; // phiên thu hiện tại
-  const mk = (side, lang) =>
-    createRecognizer({
-      name: side,
-      lang,
-      onFinal: (text, conf) => cur && text && cur[side].push({ t: performance.now() - cur.t0, text, conf }),
+  const langOf = (side) => (side === 'me' ? 'vi-VN' : partnerLang);
+  let cur = null;
+  const recs = {};
+  for (const side of ['me', 'partner']) {
+    recs[side] = createRecognizer({
+      name: 'đọc-' + side,
+      lang: langOf(side),
+      track: parallel ? probe.track : null,
+      continuous: false,
+      onFinal: (text) => { if (cur && text) cur[side] = (cur[side] ? cur[side] + ' ' : '') + text; },
       onError: () => {},
       onLog: diag,
     });
-  const recP = mk('partner', partnerLang);
-  const recV = mk('vi', 'vi-VN');
-
-  const vi = TEST_PROMPTS['vi-VN'];
-  const pa = TEST_PROMPTS[partnerLang];
-  const order = [];
-  for (let i = 0; i < 3; i++) order.push(['vi', vi[i]], ['partner', pa[i]]);
+  }
 
   const results = [];
   for (let i = 0; i < order.length; i++) {
-    const [side, text] = order[i];
-    const langName = side === 'vi' ? 'Việt' : NAMES[partnerLang];
-    const r = await ask(`Câu ${i + 1}/6 — đọc to bằng tiếng ${langName}:\n\n"${text}"`, ['Tôi sẵn sàng, bắt đầu nghe', 'Dừng bài đọc']);
+    const [side, text, listen] = order[i];
+    const langName = NAMES[langOf(side)];
+    const r = await ask(`Câu ${i + 1}/${order.length} — đọc to bằng tiếng ${langName}:\n\n"${text}"`, ['Tôi sẵn sàng, bắt đầu nghe', 'Dừng bài đọc']);
     if (r === 1) break;
-    cur = { t0: performance.now(), vi: [], partner: [] };
-    recP.start();
-    recV.start();
-    for (let s = 7; s > 0; s--) {
-      showStatus(`ĐANG NGHE (${s}s) — đọc to bằng tiếng ${langName}:\n\n"${text}"`);
+    cur = { me: '', partner: '' };
+    const active = parallel ? ['me', 'partner'] : [listen];
+    active.forEach((s) => recs[s].start());
+    for (let t = 7; t > 0; t--) {
+      showStatus(`ĐANG NGHE (${t}s) — đọc to bằng tiếng ${langName}:\n\n"${text}"`);
       await sleep(1000);
     }
-    recP.stop();
-    recV.stop();
+    active.forEach((s) => recs[s].stop());
     showStatus('Đang xử lý...');
     await sleep(1200); // chờ final cuối cùng sau khi stop
-    const j = judge(side, text, cur);
+    const heard = cur;
     cur = null;
-    results.push({ text, ...j });
-    diag('SELFTEST speak ' + JSON.stringify({ side, text, heard: j.heard, conf: j.conf }));
+    const cands = await Promise.all(
+      active.filter((s) => heard[s]).map(async (s) => {
+        const c = { side: s, lang: langOf(s), text: heard[s], detected: null };
+        try {
+          c.detected = (await detectTranslate(c.text, c.lang, langOf(s === 'me' ? 'partner' : 'me'))).detected;
+        } catch (_) {}
+        return c;
+      })
+    );
+    const j = judge(side, text, cands, listen);
+    results.push({ text, listen, mismatch: listen !== side, cands, ...j });
+    diag('SELFTEST đọc ' + JSON.stringify({ side, listen, text, cands }));
   }
-
-  if (!results.length) return;
-  reportSpeaking(results, partnerLang);
+  if (results.length) reportSpeaking(results, partnerLang, parallel);
 }
 
 function pct(x) {
   return Math.round(x * 100) + '%';
 }
 
-function reportSpeaking(results, partnerLang) {
+function reportSpeaking(results, partnerLang, parallel) {
   const pn = NAMES[partnerLang];
+  const sideName = (s) => (s === 'me' ? 'Việt' : pn);
+  const heardStr = (r) => r.cands.map((c) => `bên ${sideName(c.side)} nghe "${c.text}" (dò: ${c.detected || '?'})`).join('; ') || 'không nghe được gì';
   results.forEach((r, i) => {
-    const who = r.expectedSide === 'vi' ? 'Việt' : pn;
-    const level = r.recognizerOk && r.fastOk && r.confOk ? 'ok' : r.recognizerOk ? 'warn' : 'bad';
-    add(
-      level,
-      `Câu ${i + 1} (${who}) "${r.text}" → bên Việt nghe: "${r.heard.vi || '(không có)'}" (${pct(r.sim.vi)}); bên ${pn} nghe: "${r.heard.partner || '(không có)'}" (${pct(r.sim.partner)}); chế độ Nhanh: ${r.fastOk ? 'ĐÚNG' : 'SAI'}; chế độ Tin cậy: ${r.confOk ? 'ĐÚNG' : 'SAI'}; confidence Việt ${r.conf.vi.toFixed(2)} / ${pn} ${r.conf.partner.toFixed(2)}`
-    );
+    const who = sideName(r.expectedSide);
+    if (r.mismatch) {
+      const caught = r.winner === null;
+      add(caught ? 'ok' : 'warn', `Câu ${i + 1} (${who}, app đang nghe nhầm tiếng ${sideName(r.listen)}) → ${heardStr(r)} → ${caught ? 'app phát hiện nhầm lượt, tự chuyển bên' : 'app KHÔNG phát hiện, sẽ dịch sai câu này'}`);
+      return;
+    }
+    const level = r.recognizerOk && r.pickOk ? 'ok' : r.recognizerOk ? 'warn' : 'bad';
+    add(level, `Câu ${i + 1} (${who}) "${r.text}" → ${heardStr(r)}; khớp ${pct(r.expectedSide === 'me' ? r.sim.vi : r.sim.partner)}; app ${r.pickOk ? 'chọn ĐÚNG người nói' : r.winner ? 'chọn SAI người nói' : 'loại bỏ câu này'}`);
   });
-  const n = results.length;
-  const heardOk = results.filter((r) => r.recognizerOk).length;
-  const fast = results.filter((r) => r.fastOk).length;
-  const conf = results.filter((r) => r.confOk).length;
-  const noConf = results.every((r) => r.conf.vi === 0 && r.conf.partner === 0);
-  add('info', `Tổng kết đọc câu mẫu: nhận diện đúng ngôn ngữ ${heardOk}/${n}; chế độ Nhanh chọn đúng người nói ${fast}/${n}; chế độ Tin cậy chọn đúng ${conf}/${n}${noConf ? ' (máy không trả confidence, chế độ Tin cậy chỉ là đoán theo thứ tự)' : ''}`);
-  if (heardOk < n) issue(`Nhận diện giọng nói chỉ đúng ${heardOk}/${n} câu. Kiểm tra micro, môi trường ồn, hoặc gói ngôn ngữ nhận diện của Google chưa cài.`);
-  const best = Math.max(fast, conf);
-  if (best < n) issue(`Tự nhận diện ai đang nói chỉ đúng ${best}/${n} câu ở chế độ tốt nhất: chưa đủ tin cậy, cần đổi cách (xem đề xuất của Claude Code sau khi nhận báo cáo).`);
+  const normal = results.filter((r) => !r.mismatch);
+  const mism = results.filter((r) => r.mismatch);
+  const heardOk = normal.filter((r) => r.recognizerOk).length;
+  const pickOk = normal.filter((r) => r.pickOk).length;
+  const caught = mism.filter((r) => r.winner === null).length;
+  add('info', `Tổng kết (${parallel ? 'song song' : 'luân phiên'}): nghe đúng câu ${heardOk}/${normal.length}; nhận đúng người nói ${pickOk}/${normal.length}` + (mism.length ? `; phát hiện nói nhầm lượt ${caught}/${mism.length}` : ''));
+  if (heardOk < normal.length) issue(`Nhận diện giọng nói chỉ đúng ${heardOk}/${normal.length} câu. Kiểm tra micro, môi trường ồn, hoặc gói ngôn ngữ nhận diện của Google chưa cài.`);
+  if (pickOk < normal.length) issue(`App nhận đúng người nói ${pickOk}/${normal.length} câu: gửi báo cáo này để Claude Code chỉnh ngưỡng.`);
+  if (mism.length && caught < mism.length) issue(`Khi người nói nhầm lượt, app chỉ phát hiện ${caught}/${mism.length} lần. Lúc audit, nếu thấy ô "Đang nghe" sai người thì chạm vào ô đó để đổi.`);
 }
 
 // ---------- Báo cáo ----------
@@ -337,18 +349,22 @@ async function run() {
   $('stStart').disabled = true;
   $('stPartner').disabled = true;
   const partner = $('stPartner').value;
+  let probe = null;
   try {
     checkEnvironment();
     await checkMicPermission();
-    const blocked = await checkDualRecognizers(partner);
+    const rec = await checkRecognition(partner);
+    probe = rec.probe;
+    const blocked = rec.blocked;
     await checkTranslation();
     await checkTts();
     if (blocked) add('info', 'Bỏ qua bài đọc câu mẫu vì nhận diện giọng nói chưa chạy được (xem vấn đề ở trên).');
-    else await checkSpeaking(partner);
+    else await checkSpeaking(partner, probe);
   } catch (e) {
     add('bad', 'Bài kiểm tra bị dừng giữa chừng do lỗi: ' + (e && e.message));
     issue('Bài kiểm tra bị lỗi chương trình: ' + (e && e.message));
   } finally {
+    if (probe && probe.track) probe.track.stop();
     $('stAsk').textContent = '';
     $('stStart').disabled = false;
     $('stStart').textContent = 'Làm lại bài kiểm tra';

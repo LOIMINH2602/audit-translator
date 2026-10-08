@@ -33,12 +33,13 @@
         <option value="ja-JP">Tiếng Nhật</option>
         <option value="ko-KR">Tiếng Hàn</option>
       </select>
-      <p class="sub" style="margin:0">App tự nhận diện ai đang nói — không cần bấm chuyển. Ai nói tiếng nào, dịch tự động sang tiếng còn lại.</p>
+      <p class="sub" style="margin:0">App tự nhận ai đang nói và dịch sang tiếng còn lại. Nếu máy chỉ cho nghe 1 tiếng mỗi lúc, app nghe luân phiên: dịch xong 1 câu thì tự chuyển sang nghe người kia.</p>
     </div>
 
     <div class="panel">
       <button class="primary big" id="dlgToggle">Bắt đầu nghe</button>
       <div class="status"><span class="dot" id="dlgDot"></span><span id="dlgStatus">Đang tắt</span></div>
+      <button class="turn" id="dlgTurn" hidden></button>
       <div class="live-box">
         <div class="orig" id="dlgOrig"></div>
         <div class="trans" id="dlgTrans"></div>
@@ -71,7 +72,7 @@
     <div class="panel">
       <button class="primary big" id="mtgToggle">Bắt đầu nghe</button>
       <div class="status"><span class="dot" id="mtgDot"></span><span id="mtgStatus">Đang tắt</span></div>
-      <label class="chk"><input type="checkbox" id="mtgSpeak"> Đọc to bản dịch vào tai nghe</label>
+      <label class="chk"><input type="checkbox" id="mtgSpeak"> Đọc to bản dịch vào tai nghe (mic tạm ngừng trong lúc đọc, có thể hụt câu nói chen vào)</label>
       <div class="err" id="mtgErr" hidden></div>
     </div>
 
@@ -132,11 +133,6 @@ quality manual=sổ tay chất lượng</textarea>
     <details>
       <summary>Chẩn đoán &amp; cài đặt thử nghiệm</summary>
       <div class="panel" style="border:none;padding:10px 0 0">
-        <span class="label">Phân xử người nói (đối thoại 1:1)</span>
-        <select id="arbiterMode">
-          <option value="fast">Nhanh — bên nào có kết quả trước thì thắng</option>
-          <option value="confidence">So độ tin cậy — chờ 0,6 giây, chọn bên chắc hơn</option>
-        </select>
         <span class="label">Dịch</span>
         <button class="ghost small" id="diagTranslate">Thử dịch</button>
         <span class="label">Giọng đọc có trên máy</span>

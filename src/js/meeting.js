@@ -5,7 +5,7 @@ import { NAMES } from './config.js';
 import { createRecognizer, supported } from './recognizer.js';
 import { translate } from './translate.js';
 import { parseGlossary, applyGlossary } from './glossary.js';
-import { speak } from './tts.js';
+import { speak, cancel } from './tts.js';
 import { diag } from './diagnostics.js';
 
 export function initMeeting() {
@@ -18,8 +18,14 @@ export function initMeeting() {
     lang: currentLang,
     onFinal: (text) => text && handle(text),
     onError: (err) => {
-      setError($('mtgErr'), err === 'not-allowed' ? 'Chưa cấp quyền micro.' : 'Lỗi nhận diện giọng nói: ' + err);
-      setRunning(false);
+      if (err === 'not-allowed' || err === 'service-not-allowed') {
+        setError($('mtgErr'), 'Chưa cấp quyền micro.');
+        rec.stop();
+        setRunning(false);
+      } else {
+        // lỗi tạm (network, audio-capture...): recognizer tự khởi động lại, chỉ ghi nhật ký
+        diag('LỖI hội-trường: ' + err);
+      }
     },
     onLog: diag,
   });
@@ -31,7 +37,13 @@ export function initMeeting() {
       log.push({ time: timeNow(), tag: NAMES[currentLang], src: text, out, info: `dịch ${r.ms}ms · ${r.engine}` });
       renderLog($('mtgLog'), log);
       $('mtgCopy').disabled = false;
-      if ($('mtgSpeak').checked) speak(out, 'vi-VN');
+      if ($('mtgSpeak').checked) {
+        // tắt mic khi đọc, nếu không mic nghe lại bản dịch tiếng Việt rồi dịch tiếp thành vòng lặp
+        rec.pause();
+        await speak(out, 'vi-VN', { onError: (err) => diag('LỖI TTS vi-VN: ' + err) });
+        await new Promise((res) => setTimeout(res, 300));
+        if (running) rec.start();
+      }
     } catch (e) {
       setError($('mtgErr'), 'Dịch không thành công, bỏ qua câu này.');
       diag('LỖI dịch (hội trường): ' + (e.details || e.message));
@@ -60,6 +72,7 @@ export function initMeeting() {
     setError($('mtgErr'), '');
     if (running) {
       rec.stop();
+      cancel();
       setRunning(false);
     } else {
       rec.setLang(currentLang);

@@ -17,37 +17,49 @@ test('glossary: chèn chú giải khi bản dịch thiếu thuật ngữ, không
   assert.equal(applyGlossary('nothing here', 'không có', p), 'không có');
 });
 
-test('arbiter fast: bên đến trước thắng, bên kia bị khoá', () => {
+test('arbiter: đủ 2 bên thì đóng cửa sổ ngay, final rỗng bị bỏ', () => {
   const got = [];
-  const a = createArbiter({ mode: 'fast', lockMs: 100 }, (d) => got.push(d.side));
-  a.push('partner', 'hello', 0.9);
-  a.push('me', 'rác', 0.5);
-  assert.deepEqual(got, ['partner']);
+  const a = createArbiter({ windowMs: 1000 }, (c) => got.push(c));
+  a.push('partner', '');
+  assert.equal(got.length, 0);
+  a.push('partner', 'please show me');
+  a.push('me', 'Please Show me the cracking');
+  assert.equal(got.length, 1);
+  assert.deepEqual(got[0].map((c) => c.side), ['partner', 'me']);
 });
 
-test('arbiter confidence: chọn bên có confidence cao hơn dù đến sau', async () => {
+test('arbiter: chỉ 1 bên có kết quả thì đóng sau windowMs', async () => {
   const got = [];
-  const a = createArbiter({ mode: 'confidence', windowMs: 30, lockMs: 100 }, (d) => got.push(d));
-  a.push('me', 'rác', 0.4);
-  a.push('partner', 'hello', 0.92);
+  const a = createArbiter({ windowMs: 40 }, (c) => got.push(c));
+  a.push('me', 'xin chào');
+  await wait(20);
+  assert.equal(got.length, 0);
   await wait(60);
-  assert.equal(got.length, 1);
-  assert.equal(got[0].side, 'partner');
-  assert.equal(got[0].candidates.length, 2);
+  assert.deepEqual(got, [[{ side: 'me', text: 'xin chào' }]]);
 });
 
-test('arbiter confidence: hòa thì giữ bên đến trước; sau khoá thì nhận câu mới', async () => {
+test('arbiter: bên kia đang nghe dở (interim) thì chờ final của nó, tối đa maxMs', async () => {
   const got = [];
-  const a = createArbiter({ mode: 'confidence', windowMs: 20, lockMs: 50 }, (d) => got.push(d.side));
-  a.push('me', 'a', 0);
-  a.push('partner', 'b', 0);
-  await wait(40);
-  assert.deepEqual(got, ['me']);
-  a.push('partner', 'c', 0.8); // còn trong thời gian khoá
-  await wait(40);
+  const a = createArbiter({ windowMs: 30, maxMs: 300 }, (c) => got.push(c));
+  a.interim('me');
+  a.push('partner', 'volume'); // bên sai tiếng trả rác trước
+  await wait(100);
+  assert.equal(got.length, 0); // quá windowMs nhưng bên Việt còn đang nghe
+  a.push('me', 'vui lòng cho tôi xem sổ tay chất lượng');
   assert.equal(got.length, 1);
+  assert.equal(got[0].length, 2);
+  // interim treo (bị abort, không có final) → vẫn đóng ở maxMs
+  a.interim('partner');
+  a.push('me', 'a');
+  await wait(400);
+  assert.equal(got.length, 2);
+});
+
+test('arbiter: cùng 1 bên nhiều final trong cửa sổ thì nối lại', async () => {
+  const got = [];
+  const a = createArbiter({ windowMs: 30 }, (c) => got.push(c));
+  a.push('me', 'xin chào');
+  a.push('me', 'tôi muốn xem');
   await wait(60);
-  a.push('partner', 'd', 0.8);
-  await wait(40);
-  assert.deepEqual(got, ['me', 'partner']);
+  assert.deepEqual(got, [[{ side: 'me', text: 'xin chào tôi muốn xem' }]]);
 });

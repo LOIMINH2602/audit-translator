@@ -1,0 +1,21 @@
+vi-VN ← zh-CN-1: "siêu nhân ngôi sao siêu trường" [vi] interim@1605 final@4422
+vi-VN ← zh-CN-2: "siêu nhân" [vi] interim@1445 final@2966
+vi-VN ← zh-CN-27: "một mảnh dài thân củ khoai lang lấy chàng khu phố xá" [vi] interim@1302 final@4655
+vi-VN ← zh-CN-28: "sida" [so] interim@1446 final@1623
+vi-VN ← zh-CN-29: "siêu nhân nhện con khỉ xin tri ân" [vi] interim@1437 final@4437
+vi-VN ← ja-3: "See You Again" [en] interim@1459 final@3697
+vi-VN ← ja-4: "Shizuka đi mát xa" [vi] interim@1437 final@3374
+vi-VN ← ja-30: "số có thể tích hình vuông ABCD" [vi] interim@1430 final@4366
+vi-VN ← ja-31: "Hey Tải YouTube" [vi] interim@1993 final@2928
+vi-VN ← ja-32: "Do you know chơi câu chia đôi cửa tôi có nghe đi massage" [vi] interim@1621 final@4432
+vi-VN ← ko-5: "xin trong chủ tịch Phú Yên xổ" [vi] interim@1393 final@3059
+vi-VN ← ko-6: "Phương Trang bị nhựa trên ổ chika" [vi] interim@1430 final@3642
+vi-VN ← ko-33: "su su cao su non Hải Dương thi đấu SEA Games" [vi] interim@1471 final@4843
+vi-VN ← ko-34: "để phim Samsung j8" [vi] interim@1910 final@3064
+vi-VN ← ko-35: "sĩ quan Do yêu cầu của gen" [vi] interim@1311 final@3886
+vi-VN ← en-9: "Please Show me the correct the restaurant" [en] interim@1388 final@3537
+vi-VN ← en-10: "Where is the world in your" [en] interim@1395 final@2622
+vi-VN ← en-36: "UEFA wanna One thành phố Manila house" [vi] interim@1311 final@3886
+vi-VN ← en-37: "Yes No Problem" [en] interim@1559 final@2360
+vi-VN ← en-38: "Where are you in paris Training Richard" [en] interim@1315 final@3127
+vi-VN ← en-w3: "repaid in the weather" [en] interim@1315 final@3576

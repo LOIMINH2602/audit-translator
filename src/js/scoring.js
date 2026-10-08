@@ -1,5 +1,7 @@
-// Chấm điểm bài test nhận diện người nói: app biết câu mẫu đúng nên tự tính bên nào nghe đúng
-// và chế độ phân xử nào (nhanh / độ tin cậy) sẽ chọn đúng bên.
+// Chấm điểm bài test nhận diện người nói: app biết câu mẫu đúng nên tự tính recognizer có nghe đúng không
+// và app có chọn đúng người nói không.
+
+import { pickSpeaker } from './speaker.js';
 
 export const PASS_SIMILARITY = 0.6;
 
@@ -33,36 +35,24 @@ export function similarity(a, b) {
   return 1 - editDistance(x, y) / Math.max(x.length, y.length);
 }
 
-// finals: { vi: [{ t, text, conf }], partner: [...] } — các final không rỗng của từng recognizer.
-export function judge(expectedSide, expectedText, finals) {
-  const sides = ['vi', 'partner'];
-  const heard = {};
-  const sim = {};
-  const first = {};
-  const conf = {};
-  for (const s of sides) {
-    const list = (finals[s] || []).filter((f) => f.text);
-    heard[s] = list.map((f) => f.text).join(' ');
-    sim[s] = similarity(expectedText, heard[s]);
-    first[s] = list.length ? Math.min(...list.map((f) => f.t)) : Infinity;
-    conf[s] = list.length ? Math.max(...list.map((f) => f.conf)) : 0;
+// cands: [{ side, lang, text, detected }] — kết quả nhận diện (đã dò ngôn ngữ) của 1 câu mẫu, mỗi bên tối đa 1.
+// Chấm: recognizer của bên đúng có nghe đúng câu không, và pickSpeaker có chọn đúng bên không.
+export function judge(expectedSide, expectedText, cands, expectedTurn = expectedSide) {
+  const heard = { vi: '', partner: '' };
+  const sim = { vi: 0, partner: 0 };
+  for (const c of cands) {
+    const k = c.side === 'me' ? 'vi' : 'partner';
+    heard[k] = c.text || '';
+    sim[k] = similarity(expectedText, heard[k]);
   }
-  const heardAny = sides.filter((s) => heard[s]);
-  // Chế độ "nhanh": bên có final đầu tiên thắng.
-  const fastWinner = heardAny.length ? heardAny.reduce((a, b) => (first[b] < first[a] ? b : a)) : null;
-  // Chế độ "độ tin cậy": bên có confidence cao hơn thắng, hòa thì bên đến trước.
-  const confWinner = heardAny.length
-    ? heardAny.reduce((a, b) => (conf[b] > conf[a] || (conf[b] === conf[a] && first[b] < first[a]) ? b : a))
-    : null;
+  const win = pickSpeaker(cands, expectedTurn);
+  const key = expectedSide === 'me' ? 'vi' : 'partner';
   return {
     expectedSide,
     heard,
     sim,
-    conf,
-    fastWinner,
-    confWinner,
-    recognizerOk: sim[expectedSide] >= PASS_SIMILARITY,
-    fastOk: fastWinner === expectedSide,
-    confOk: confWinner === expectedSide,
+    winner: win ? win.side : null,
+    recognizerOk: sim[key] >= PASS_SIMILARITY,
+    pickOk: Boolean(win) && win.side === expectedSide,
   };
 }

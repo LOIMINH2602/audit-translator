@@ -75,3 +75,7 @@ pre.diag{margin:0;background:var(--bg);border:1px solid var(--line);border-radiu
 .st-q{white-space:pre-line;font-size:15px;font-weight:600}
 .st-issues{margin:8px 0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:13px}
 .note.ok-note{background:var(--soft);color:var(--accent)}
+/* ô "Đang nghe: ..." ở chế độ luân phiên — to, dễ chạm để đổi lượt */
+button.turn{width:100%;padding:14px 12px;border-radius:10px;font:inherit;font-weight:700;font-size:15px;cursor:pointer;border:2px solid var(--accent);background:var(--soft);color:var(--accent)}
+button.turn.partner{border-color:var(--warn);background:var(--warn-bg);color:var(--warn)}
+button.turn[hidden]{display:none}

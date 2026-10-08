@@ -28,7 +28,8 @@ $('tabTest').onclick = () => selectTab('test');
 
 $('appVersion').textContent = 'Bản ' + APP_VERSION;
 initDiagnostics();
-initDialogue();
+// trạng thái màn 1:1 cho test tự động (tools/e2e) đọc
+window.__dialogue = initDialogue();
 initMeeting();
 initSelfTest();
 
