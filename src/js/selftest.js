@@ -19,7 +19,7 @@ const LANGS = ['vi-VN', 'en-US', 'zh-CN', 'ja-JP', 'ko-KR'];
 let lines = []; // { level, text } — nguyên liệu của báo cáo
 let issues = []; // kết luận bằng lời thường, hiện đầu báo cáo
 
-function add(level, text) {
+export function add(level, text) {
   lines.push({ level, text });
   const div = document.createElement('div');
   div.className = 'st-line ' + level;
@@ -28,15 +28,16 @@ function add(level, text) {
   div.scrollIntoView({ block: 'nearest' });
 }
 
-function issue(text) {
+export function issue(text) {
   issues.push(text);
 }
 
-// Hỏi người dùng 1 câu có nút trả lời; trả về chỉ số nút đã bấm.
-function ask(question, options) {
+// Hỏi người dùng 1 câu có nút trả lời; trả về chỉ số nút đã bấm. step: mã bước (data-step) cho test tự động.
+export function ask(question, options, step = '') {
   return new Promise((resolve) => {
     const box = $('stAsk');
     box.textContent = '';
+    box.dataset.step = step;
     const q = document.createElement('div');
     q.className = 'st-q';
     q.textContent = question;
@@ -57,9 +58,10 @@ function ask(question, options) {
   });
 }
 
-function showStatus(text) {
+export function showStatus(text, step = '') {
   const box = $('stAsk');
   box.textContent = '';
+  box.dataset.step = step;
   const q = document.createElement('div');
   q.className = 'st-q';
   q.textContent = text;
@@ -312,8 +314,8 @@ function reportSpeaking(results, partnerLang, parallel) {
 
 // ---------- Báo cáo ----------
 
-function buildReport() {
-  const head = [`BÁO CÁO TỰ KIỂM TRA — Phiên Dịch Audit — bản ${APP_VERSION} — ${new Date().toLocaleString('vi-VN')}`, ''];
+function buildReport(title) {
+  const head = [`${title} — Phiên Dịch Audit — bản ${APP_VERSION} — ${new Date().toLocaleString('vi-VN')}`, ''];
   const sum = issues.length
     ? ['VẤN ĐỀ PHÁT HIỆN:', ...issues.map((t, i) => `${i + 1}. ${t}`)]
     : ['Không phát hiện vấn đề nào.'];
@@ -321,7 +323,7 @@ function buildReport() {
   return [...head, ...sum, '', 'CHI TIẾT:', ...body, '', 'NHẬT KÝ (cuối):', recentLog(60)].join('\n');
 }
 
-function finish() {
+export function finish(title = 'BÁO CÁO TỰ KIỂM TRA') {
   const panel = $('stReportPanel');
   panel.hidden = false;
   const sum = $('stSummary');
@@ -340,20 +342,26 @@ function finish() {
     });
     sum.appendChild(ol);
   }
-  const text = buildReport();
+  const text = buildReport(title);
   $('stReport').textContent = text;
   $('stCopy').onclick = () => copyText(text, $('stCopy'));
   $('stShare').hidden = !navigator.share;
-  $('stShare').onclick = () => navigator.share({ title: 'Báo cáo tự kiểm tra Phiên Dịch Audit', text }).catch(() => {});
+  $('stShare').onclick = () => navigator.share({ title: title + ' — Phiên Dịch Audit', text }).catch(() => {});
   panel.scrollIntoView({ block: 'start' });
 }
 
-async function run() {
+// Xoá báo cáo cũ trước 1 bài kiểm tra/bài đo mới.
+export function resetReport() {
   lines = [];
   issues = [];
   $('stList').textContent = '';
   $('stReportPanel').hidden = true;
+}
+
+async function run() {
+  resetReport();
   $('stStart').disabled = true;
+  $('stField').disabled = true;
   $('stPartner').disabled = true;
   const partner = $('stPartner').value;
   let probe = null;
@@ -376,6 +384,7 @@ async function run() {
     $('stStart').disabled = false;
     $('stStart').textContent = 'Làm lại bài kiểm tra';
     $('stPartner').disabled = false;
+    $('stField').disabled = false;
     finish();
   }
 }

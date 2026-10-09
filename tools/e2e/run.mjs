@@ -10,19 +10,10 @@
 // Cần: Chrome cài sẵn (đổi đường dẫn bằng biến CHROME), mạng ra Google (nhận diện + dịch + tải mẫu giọng).
 // Mẫu giọng tải về tools/e2e/audio/ (không commit).
 
-import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { loadClips, readTool, runInChrome } from './chrome.mjs';
 
-const here = fileURLToPath(new URL('.', import.meta.url));
-const root = join(here, '..', '..');
 const partner = process.argv[2] || 'en-US';
 const android = process.argv[3] === 'android';
-const CHROME = process.env.CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const PORT = 8089;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- mẫu giọng ----------
 const SAMPLES = {
@@ -47,17 +38,7 @@ const SAMPLES = {
   'ko-3': ['ko', '창고에서 부적합 사항이 하나 발견되었습니다.'],
   'ko-4': ['ko', '직원 교육 기록은 어디에 있습니까?'],
 };
-const audioDir = join(here, 'audio');
-mkdirSync(audioDir, { recursive: true });
-for (const [id, [tl, text]] of Object.entries(SAMPLES)) {
-  const f = join(audioDir, id + '.mp3');
-  if (existsSync(f)) continue;
-  const r = await fetch(`https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=${tl}&q=${encodeURIComponent(text)}`);
-  if (!r.ok) throw new Error(`tải mẫu giọng ${id} lỗi http ${r.status}`);
-  writeFileSync(f, Buffer.from(await r.arrayBuffer()));
-}
-const clips = {};
-for (const f of readdirSync(audioDir)) if (f.endsWith('.mp3')) clips[f.slice(0, -4)] = readFileSync(join(audioDir, f)).toString('base64');
+const clips = await loadClips(SAMPLES);
 
 // ---------- kịch bản ----------
 const p = partner === 'en-US' ? 'en' : partner === 'zh-CN' ? 'zh-CN' : partner.slice(0, 2);
@@ -73,62 +54,12 @@ const script = process.env.SCRIPT ? JSON.parse(process.env.SCRIPT) : [
   ['partner', `${p}-3`],
 ];
 const page =
-  `window.__CLIPS=${JSON.stringify(clips)};\n` + readFileSync(join(here, 'fakemic.js'), 'utf8') +
+  `window.__CLIPS=${JSON.stringify(clips)};\n` + readTool('fakemic.js') +
   `\nwindow.__slowTts=${Number(process.env.SLOW_TTS ?? 2500)};` +
   `\nwindow.__FULLDIAG=${Boolean(process.env.FULLDIAG)};` +
-  `\nwindow.__CFG=${JSON.stringify({ partner, android, script })};\n` + readFileSync(join(here, 'e2e.js'), 'utf8');
+  `\nwindow.__CFG=${JSON.stringify({ partner, android, script })};\n` + readTool('e2e.js');
 
-// ---------- server + Chrome ----------
-const server = spawn(process.execPath, [join(root, 'tools', 'serve.mjs')], { env: { ...process.env, PORT: String(PORT) }, stdio: 'ignore' });
-const profile = mkdtempSync(join(tmpdir(), 'audit-e2e-'));
-const dbg = 9300 + Math.floor(Math.random() * 500);
-const chrome = spawn(CHROME, [
-  `--remote-debugging-port=${dbg}`, `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check',
-  // cửa sổ Chrome bị cửa sổ khác che → trang 'hidden' → Chrome không tải <audio> (giọng Google Dịch không phát)
-  '--disable-features=CalculateNativeWinOcclusion', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required', 'about:blank',
-], { stdio: 'ignore' });
-let result;
-try {
-  let ver;
-  for (let i = 0; i < 150 && !ver; i++) {
-    await sleep(200);
-    ver = await fetch(`http://127.0.0.1:${dbg}/json/version`).then((r) => r.json()).catch(() => null);
-  }
-  const tgt = await fetch(`http://127.0.0.1:${dbg}/json/new?${encodeURIComponent(process.env.BASE_URL || `http://localhost:${PORT}/`)}`, { method: 'PUT' }).then((r) => r.json());
-  const ws = new WebSocket(tgt.webSocketDebuggerUrl);
-  await new Promise((r) => (ws.onopen = r));
-  let id = 0;
-  const pending = new Map();
-  ws.onmessage = (m) => {
-    const d = JSON.parse(m.data);
-    if (d.id && pending.has(d.id)) pending.get(d.id)(d);
-    if (d.method === 'Runtime.exceptionThrown') console.log('LỖI JS', d.params.exceptionDetails.text, d.params.exceptionDetails.exception?.description || '');
-  };
-  const send = (method, params = {}) => new Promise((res) => { const i = ++id; pending.set(i, res); ws.send(JSON.stringify({ id: i, method, params })); });
-  await send('Runtime.enable');
-  // BLOCK_GTTS=1: chặn file đọc của Google Dịch (giả lập mất mạng / Google chặn) để test đường dự phòng giọng máy
-  if (process.env.BLOCK_GTTS) {
-    await send('Network.enable');
-    await send('Network.setBlockedURLs', { urls: ['*translate_tts*'] });
-  }
-  // tab chưa từng hiển thị thì Chrome hoãn tải <audio> (giọng Google Dịch không phát) → luôn đưa tab lên trước
-  await send('Page.bringToFront');
-  // cửa sổ test luôn ở trạng thái thường, đặt trên cùng (thu nhỏ → trang hidden)
-  try {
-    const w = await send('Browser.getWindowForTarget', {});
-    if (w.result) await send('Browser.setWindowBounds', { windowId: w.result.windowId, bounds: { windowState: 'normal' } });
-  } catch (_) {}
-  await sleep(2500);
-  const r = await send('Runtime.evaluate', { expression: page, awaitPromise: true, returnByValue: true, userGesture: true, timeout: 400000 });
-  result = r.result?.result?.value;
-  if (!result) console.log('Không có kết quả:', JSON.stringify(r).slice(0, 800));
-  ws.close();
-} finally {
-  chrome.kill();
-  server.kill();
-  await sleep(800);
-  try { rmSync(profile, { recursive: true, force: true }); } catch (_) {}
-}
+const result = await runInChrome(page);
 
 if (result) {
   if (result.hiddenMs) console.log(`⚠ KHÔNG HỢP LỆ: trang bị ẩn ${result.hiddenMs}ms trong lúc chạy (cửa sổ Chrome bị thu nhỏ/che) — số đo độ trễ không đại diện điện thoại, chạy lại.`);

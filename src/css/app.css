@@ -73,6 +73,8 @@ pre.diag{margin:0;background:var(--bg);border:1px solid var(--line);border-radiu
 .st-ask:empty{display:none}
 .st-ask{background:var(--soft);border:1px solid var(--accent);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px}
 .st-q{white-space:pre-line;font-size:15px;font-weight:600}
+/* nút chạm khi nghe tiếng bíp / bản dịch (bài Đo tai nghe): to, dễ chạm không cần nhìn */
+button.tap{width:100%;min-height:120px;font-size:20px;font-weight:700}
 .st-issues{margin:8px 0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:13px}
 .note.ok-note{background:var(--soft);color:var(--accent)}
 /* ô "Đang nghe: ..." ở chế độ luân phiên — to, dễ chạm để đổi lượt */

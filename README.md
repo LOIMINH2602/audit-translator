@@ -74,6 +74,7 @@ npm test         # test logic
 node tools/e2e/run.mjs ja-JP            # test đầu-cuối chế độ song song (Chrome desktop)
 node tools/e2e/run.mjs ja-JP android    # giả lập máy chỉ cho 1 recognizer → chế độ luân phiên
 node tools/e2e/tune.mjs [grid]          # chấm pickSpeaker trên 122 ca nhận diện đo thật
+node tools/e2e/field.mjs [android]      # test bài "Đo tai nghe & độ trễ" với người dùng giả (4 kịch bản tai nghe)
 ```
 
 `run.mjs` mở Chrome riêng (profile tạm), tải mẫu giọng Google TTS về `tools/e2e/audio/` (không commit), phát qua micro giả và in từng lượt: ĐÚNG / SAI / NÓI LẠI→ĐÚNG. Mất khoảng 2 phút mỗi lần. Micro giả là AudioContext đưa vào `start(track)`; chế độ `android` giả lập việc phiên nhận diện mới huỷ phiên cũ.
@@ -108,6 +109,16 @@ Dùng tab **Tự kiểm tra** (tab thứ 3). Bấm 1 nút, app tự chạy và t
 5. Đọc to câu mẫu theo đúng chế độ máy dùng: app biết câu đúng nên tự chấm nghe đúng không, nhận đúng người nói không. Ở chế độ luân phiên có thêm 2 câu "nói nhầm lượt" để đo app có tự phát hiện không.
 
 Kết quả là báo cáo tiếng Việt có mục "Vấn đề phát hiện" kèm cách xử lý, nút **Gửi báo cáo** (chia sẻ qua Zalo/Messenger) và **Sao chép**. Logic chấm điểm nằm ở `src/js/scoring.js`, có test trong `tests/scoring.test.js`.
+
+### Đo tai nghe & độ trễ (cùng tab, nút thứ 2)
+
+Đo những gì máy tính không giả lập được: Bluetooth thật. Khoảng 5 phút, người dùng chạm nút khi nghe tiếng bíp và trả lời nghe ở tai nào. Báo cáo cho biết:
+
+- Tai trái/phải có tách được không: lúc micro tắt, lúc nhận diện giọng nói đang bật, lúc app giữ micro điện thoại (getUserMedia + `start(track)`).
+- Mỗi lần micro tắt, tai nghe chậm thêm bao lâu mới phát được tiếng, có mất tiếng đầu không (so phản xạ với lúc micro chưa bật).
+- Chuỗi thật: dứt lời → chốt câu → dịch → máy bắt đầu đọc → nghe thấy, tách ra từng bước, chỉ ra bước chậm nhất.
+
+Đo 1 lần với tai nghe, 1 lần với loa điện thoại (tắt Bluetooth) thì báo cáo có dòng So sánh. Kết luận tính ở `src/js/fieldcheck.js` (test: `tests/fieldcheck.test.js`), giao diện ở `src/js/fieldtest.js`, test tự động `tools/e2e/field.mjs`.
 
 Mục **Chẩn đoán & cài đặt thử nghiệm** cuối trang vẫn còn cho việc soi chi tiết: nhật ký từng sự kiện (có dòng `QUYẾT ĐỊNH` cho mỗi câu: bên nào thắng, mỗi recognizer nghe ra gì, Google dò ra tiếng gì), đọc thử từng giọng, nút Thử dịch.
 
