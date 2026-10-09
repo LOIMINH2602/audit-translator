@@ -1,5 +1,5 @@
 // Tăng mỗi lần deploy để biết điện thoại đang chạy bản nào (hiện ở chân trang và đầu báo cáo).
-export const APP_VERSION = '2026-10-09.3 chống-ồn';
+export const APP_VERSION = '2026-10-10.1 dịch-cả-lượt';
 
 export const NAMES = {
   'en-US': 'Anh',

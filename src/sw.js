@@ -1,6 +1,6 @@
 // Service worker tối thiểu: network-first để luôn lấy bản mới, rơi về cache khi mất mạng.
 // Chỉ cache file cùng origin; API dịch (MyMemory/Google) không bao giờ bị cache.
-const CACHE = 'audit-translator-v9';
+const CACHE = 'audit-translator-v10';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => {

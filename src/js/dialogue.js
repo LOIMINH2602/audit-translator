@@ -16,7 +16,7 @@ import { $, setError, timeNow, copyText, renderLog, logToText } from './ui.js';
 import { NAMES } from './config.js';
 import { createRecognizer, probeParallel, supported } from './recognizer.js';
 import { createArbiter } from './arbiter.js';
-import { detectTranslate } from './translate.js';
+import { detectTranslate, translate } from './translate.js';
 import { pickSpeaker, syllables, isEcho } from './speaker.js';
 import { parseGlossary, applyGlossary } from './glossary.js';
 import { speak, canSpeak, warmUp, getMode, setMode, resetAuto, cancel as cancelSpeech } from './tts.js';
@@ -312,8 +312,25 @@ export function initDialogue() {
     $('dlgCopy').disabled = false;
     $('dlgOrig').textContent = floor.map((e) => e.src).join(' ');
     $('dlgTrans').textContent = floor.map((e) => e.out).join(' ');
+    if (floor.length > 1) prepareWhole(side, to);
     setError($('dlgErr'), canSpeak(to) ? '' : `Không thấy giọng đọc ${NAMES[to]} trong máy (vẫn thử đọc). Chọn "Giọng Google" ở ô Giọng đọc.`);
     armHold();
+  }
+
+  // Dịch sẵn cả lượt (nhiều đoạn) thành 1 khối ở nền mỗi khi có đoạn mới: từng đoạn dịch riêng rồi ghép thì câu rời
+  // rạc, mất ngữ cảnh (10/10/2026: đối tác Hàn chê bản dịch). Lúc đọc chỉ dùng nếu đã xong, không bắt người nghe chờ.
+  let whole = null; // { src, p: Promise<{ text, ms }|null>, r }
+  function joinSrc(segs, from) {
+    return segs.map((e) => e.src.trim().replace(/[.!?。！？]+$/, '')).join(from === 'vi-VN' || from === 'en-US' ? '. ' : '。');
+  }
+  function prepareWhole(side, to) {
+    const from = langOf(side);
+    const src = joinSrc(floor, from);
+    const job = { src, r: null };
+    job.p = translate(src, from, to, { timeoutMs: 3000, only: 'google' })
+      .then((r) => (job.r = r))
+      .catch(() => null);
+    whole = job;
   }
 
   // ---------- chế độ luân phiên: giữ lượt ----------
@@ -393,9 +410,24 @@ export function initDialogue() {
     const to = langOf(other(side));
     const segs = floor;
     floor = [];
-    const out = segs.map((e) => e.out).join(' ');
+    let out = segs.map((e) => e.out).join(' ');
     const last = segs[segs.length - 1];
-    if (segs.length > 1) last.info += ` · cả lượt ${segs.length} đoạn`;
+    if (segs.length > 1) {
+      last.info += ` · cả lượt ${segs.length} đoạn`;
+      const job = whole;
+      const src = joinSrc(segs, langOf(side));
+      if (job && job.src === src) {
+        if (!job.r) await Promise.race([job.p, new Promise((res) => setTimeout(res, 300))]); // gần xong thì chờ chút
+        if (job.r) {
+          out = side === 'partner' ? applyGlossary(src, job.r.text, parseGlossary($('glossary').value)) : job.r.text;
+          last.info += ' · đọc bản dịch cả lượt';
+          $('dlgTrans').textContent = out;
+          diag(`Đọc bản dịch cả lượt: "${src}" → "${out}"`);
+        } else diag('Bản dịch cả lượt chưa xong → đọc bản ghép từng đoạn');
+      }
+      if (!running) return void (busy = false);
+    }
+    whole = null;
     diag(`Kết thúc lượt ${WHO[side]} (${how}, ${segs.length} đoạn) → đọc bản dịch`);
     turn = other(side);
     showStatus('Đang đọc bản dịch…');
