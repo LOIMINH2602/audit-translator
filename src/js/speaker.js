@@ -24,13 +24,18 @@ export function syllables(text, lang) {
 }
 
 const MIN_VI_RATIO = 0.5; // câu thật có chèn ISO/FSC/BRC vẫn ~0,75
+// Google đã dò ra tiếng Việt: chỉ loại khi gần như toàn từ ngoại. 09/10/2026: câu thật kiểu "check lại KPI của line 3"
+// (0,4) bị loại → app tưởng người kia nói. Câu nghe nhầm tiếng nước ngoài mà Google dò ra "vi" thường lại toàn âm
+// tiết Việt ("siêu nhân ngôi sao…" = 1,0) nên ngưỡng này không giúp lọc chúng.
+const MIN_VI_RATIO_DETECTED = 0.3;
 
 // cand: { side, lang, text, detected?: 'en' | 'zh-CN' | null }
 export function plausible(cand) {
   if (!/\p{L}/u.test(cand.text || '')) return false; // rỗng, chỉ có số/dấu câu
   if (cand.detected && baseLang(cand.detected) !== baseLang(cand.lang)) return false;
   // tiếng Việt mà quá nửa là từ không phải âm tiết Việt ("UEFA wanna One thành phố Manila house") → nghe nhầm tiếng
-  if (baseLang(cand.lang) === 'vi' && vietnameseRatio(cand.text) < MIN_VI_RATIO) return false;
+  const min = cand.detected && baseLang(cand.detected) === 'vi' ? MIN_VI_RATIO_DETECTED : MIN_VI_RATIO;
+  if (baseLang(cand.lang) === 'vi' && vietnameseRatio(cand.text) < min) return false;
   return true;
 }
 
@@ -40,7 +45,8 @@ const VI_VOWEL = 'aàáảãạăằắẳẵặâầấẩẫậeèéẻẽẹ�
 const VI_SYLLABLE = new RegExp(`^(ngh|ng|nh|ch|gh|gi|kh|ph|qu|th|tr|[bcdđghklmnpqrstvx])?[${VI_VOWEL}]{1,3}(ng|nh|ch|[cmnpt])?$`);
 
 export function vietnameseRatio(text) {
-  const words = (text || '').toLowerCase().normalize('NFC').match(/[\p{L}\p{N}]+/gu) || [];
+  // số ("9001", "3") không thuộc tiếng nào: không tính
+  const words = ((text || '').toLowerCase().normalize('NFC').match(/[\p{L}\p{N}]+/gu) || []).filter((w) => !/^\p{N}+$/u.test(w));
   if (!words.length) return 0;
   return words.filter((w) => VI_SYLLABLE.test(w)).length / words.length;
 }

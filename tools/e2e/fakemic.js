@@ -6,6 +6,22 @@
   const track = dest.stream.getAudioTracks()[0];
   // micro thật luôn có dữ liệu: phát im lặng liên tục (nhiễu rất nhỏ) để track không bao giờ 'đứng'
   const hiss = ctx.createConstantSource(); hiss.offset.value = 0.0001; hiss.connect(dest); hiss.start();
+  // __noise > 0: tiếng ồn nền liên tục (nhà xưởng, quạt, người xung quanh) trộn vào micro — micro giả im tuyệt đối thì
+  // máy luôn báo "hết tiếng nói" kịp thời, ngoài đời thì không (09/10/2026: Lợi Minh báo app không tự đọc bản dịch).
+  if (window.__noise > 0) {
+    const len = ctx.sampleRate * 4;
+    const nb = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = nb.getChannelData(0);
+    let b0 = 0, b1 = 0, b2 = 0;
+    for (let i = 0; i < len; i++) { // nhiễu hồng (gần tiếng ồn môi trường hơn nhiễu trắng)
+      const w = Math.random() * 2 - 1;
+      b0 = 0.99765 * b0 + w * 0.099046; b1 = 0.963 * b1 + w * 0.2965164; b2 = 0.57 * b2 + w * 1.0526913;
+      d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.2;
+    }
+    const src = ctx.createBufferSource(); src.buffer = nb; src.loop = true;
+    const g = ctx.createGain(); g.gain.value = window.__noise;
+    src.connect(g).connect(dest); src.start();
+  }
   const bufs = {};
   window.__ready = Promise.all(Object.entries(window.__CLIPS).map(async ([k, b64]) => {
     const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));

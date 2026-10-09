@@ -59,7 +59,11 @@ export function initDialogue() {
   let floorSide = 'me'; // ai đang giữ lượt
   let inflight = 0; // số đoạn đang dịch
   let holdTimer = null;
-  let talking = false; // máy báo đang có tiếng nói (speechstart chưa có speechend)
+  // Mốc tính im lặng: lần cuối nghe ra chữ mới (chữ tạm đổi / final) hoặc máy báo bắt đầu có tiếng nói. Không dùng
+  // cờ "đang nói" (speechstart → speechend):
+  // 09/10/2026 Lợi Minh báo nói tiếng Việt xong app không tự đọc bản dịch, phải chạm ô lượt; e2e có tiếng ồn nền
+  // (NOISE=0.03–0.1) tái hiện: Chrome báo hết tiếng nói trễ 4–8 giây hoặc không báo, speechstart bắn vì tiếng ồn.
+  let lastHeardAt = 0;
   const holdMs = () => Number($('holdMs').value) || 2000;
   let lastSpoken = { text: '', lang: '', endAt: -1e9 }; // bản dịch vừa đọc, để lọc tiếng vọng
   const echoOf = (text, lang) =>
@@ -129,7 +133,11 @@ export function initDialogue() {
           lang: langOf(side),
           track: probe.track,
           continuous: false,
-          onFinal: (text) => { if (!busy) arbiter.push(side, text); },
+          onFinal: (text) => {
+            if (busy) return;
+            if (text) lastHeardAt = performance.now();
+            arbiter.push(side, text);
+          },
           // bên này nghe dở rồi kết thúc không ra chữ (thường là sai tiếng): báo ngay để arbiter khỏi chờ tới maxMs
           onNoMatch: () => {
             if (busy) return;
@@ -137,11 +145,15 @@ export function initDialogue() {
             armHold();
           },
           onStart: onListening,
-          onSpeechStart: () => { if (!busy) clearTimeout(holdTimer); }, // có người đang nói: chưa kết thúc lượt
+          onSpeechStart: () => {
+            if (busy) return;
+            lastHeardAt = performance.now(); // dời mốc kết thúc lượt 1 lần (xem chế độ luân phiên)
+            armHold();
+          },
           onInterim: (text) => {
             if (busy) return;
-            clearTimeout(holdTimer);
-            lastInterimAt = performance.now();
+            lastInterimAt = lastHeardAt = performance.now();
+            armHold(); // có chữ mới: dời mốc kết thúc lượt
             arbiter.interim(side);
             interims[side] = text;
             // hiện chuỗi dài hơn trong 2 bên (bên sai tiếng thường ngắn/rỗng)
@@ -160,16 +172,24 @@ export function initDialogue() {
           continuous: false,
           onFinal: (text) => {
             clearTimeout(speechEndTimer);
-            if (!busy && text) takeSegment(text, 'final');
+            if (busy || !text) return;
+            lastHeardAt = performance.now();
+            takeSegment(text, 'final');
           },
+          // máy báo bắt đầu có tiếng nói (sớm hơn chữ tạm 0,5–1 giây): dời mốc kết thúc lượt 1 lần — người đang giữ
+          // lượt vừa nói tiếp sau quãng ngừng. Chỉ là 1 mốc, không phải cờ "đang nói": ồn thì máy bắn speechstart mà
+          // không bao giờ bắn speechend, cờ sẽ kẹt và lượt không bao giờ kết thúc (lỗi trước 09/10/2026).
           onSpeechStart: () => {
             if (busy) return;
-            talking = true;
-            clearTimeout(holdTimer); // người đang giữ lượt nói tiếp: chưa kết thúc lượt
+            lastHeardAt = performance.now();
+            armHold();
           },
+          // máy báo hết tiếng nói (yên tĩnh thì đến kịp lúc): chốt đoạn sớm, không chờ final của Android. Im lặng
+          // tính từ đây — chữ tạm cuối cùng đến sớm hơn lúc người nói thật sự dừng vài trăm ms, tính từ đó thì quãng
+          // ngừng 1,2 giây giữa 2 đoạn đã bị coi là hết lượt. Ồn mà máy không báo: vẫn còn mốc chữ tạm cuối cùng.
           onSpeechEnd: () => {
-            talking = false;
             if (busy) return;
+            lastHeardAt = performance.now();
             if (!interimText) armHold(); // tiếng động ngắn không ra chữ: hẹn lại kết thúc lượt
             clearTimeout(speechEndTimer);
             speechEndTimer = setTimeout(() => {
@@ -184,9 +204,9 @@ export function initDialogue() {
             $('dlgOrig').textContent = [...floor.map((e) => e.src), text].join(' ');
             if (text.trim() === interimText) return;
             clearTimeout(speechEndTimer); // còn chữ mới: người nói chưa dứt
-            clearTimeout(holdTimer); // đang nói tiếp: chưa kết thúc lượt
             interimText = text.trim();
-            lastInterimAt = performance.now();
+            lastInterimAt = lastHeardAt = performance.now();
+            armHold(); // dời mốc kết thúc lượt; chữ đứng yên đủ holdMs thì chốt luôn (endIfQuiet)
           },
           onStart: onListening,
           onNoMatch: () => {
@@ -227,7 +247,6 @@ export function initDialogue() {
     if (!running) return;
     interims.partner = interims.me = '';
     interimText = '';
-    talking = false;
     clearTimeout(speechEndTimer);
     arbiter.reset();
     listenAt = performance.now();
@@ -301,7 +320,6 @@ export function initDialogue() {
   // 1 đoạn nói xong: dịch ngay, hiện chữ, chưa đọc; mic vẫn nghe tiếp người đang nói.
   async function takeSegment(text, how) {
     interimText = '';
-    talking = false;
     const side = turn;
     const lang = langOf(side);
     const to = langOf(other(side));
@@ -325,17 +343,40 @@ export function initDialogue() {
     diag(`QUYẾT ĐỊNH (turn, lượt ${WHO[side]}, ${how}, chờ câu ${waitMs}ms, đoạn ${floor.length + 1}): ${ok ? 'nhận' : 'loại'} [${lang}→dò ${r.detected || '?'}] "${text}"`);
     if (!ok) {
       if (!floor.length && !inflight) return switchTurn(); // chưa ai nói gì mà nghe sai tiếng: bên kia đang nói
+      // Đang giữ lượt mà nghe ra cả câu sai tiếng (≥ 2 từ): người kia đã bắt đầu nói → đọc ngay bản dịch lượt này
+      // rồi nghe người kia (09/10/2026: "không tự nhận diện được ai đang nói"). 1 từ rời thường là tiếng động: bỏ qua.
+      if (syllables(text, lang) >= 2 && floor.length) {
+        diag(`Nghe ra câu sai tiếng khi ${WHO[side]} đang giữ lượt → nghi ${WHO[other(side)]} đang nói, đọc bản dịch ngay`);
+        return release('người kia nói');
+      }
       return armHold(); // đang giữ lượt: bỏ đoạn rác, giữ lượt
     }
     addToFloor(side, text, r, waitMs, how);
   }
 
-  // Hẹn kết thúc lượt sau holdMs im lặng (không hẹn nếu người nói đang nói dở 1 đoạn).
+  // Kết thúc lượt khi KHÔNG CÓ CHỮ MỚI trong holdMs, tính từ lastHeardAt (xem khai báo). Có lượt đang giữ (floor) hoặc
+  // đang có chữ tạm chưa thành câu thì hẹn; gọi lại mỗi khi có chữ mới để dời mốc.
   function armHold() {
     clearTimeout(holdTimer);
-    if (!running || busy || !floor.length || interimText || talking) return;
+    if (!running || busy) return;
+    if (!floor.length && !(mode === 'turn' && interimText)) return;
     showStatus();
-    holdTimer = setTimeout(() => release('im lặng'), holdMs());
+    holdTimer = setTimeout(endIfQuiet, Math.max(50, lastHeardAt + holdMs() - performance.now()));
+  }
+
+  async function endIfQuiet() {
+    if (!running || busy) return;
+    if (performance.now() - lastHeardAt < holdMs() - 50) return armHold(); // vừa có chữ mới
+    if (mode === 'turn' && interimText) {
+      // chữ tạm đứng yên đủ holdMs mà máy chưa báo hết tiếng nói / chưa có final (thường do ồn): chốt luôn
+      const t = interimText;
+      clearTimeout(speechEndTimer);
+      diag(`Chữ tạm đứng yên ${holdMs()}ms, máy chưa chốt câu → tự chốt: "${t}"`);
+      recs.one.restart();
+      await takeSegment(t, 'chữ đứng yên');
+      if (!running || busy) return;
+    }
+    release('im lặng');
   }
 
   // Kết thúc lượt: đọc bản dịch cả lượt rồi chuyển sang bên kia.

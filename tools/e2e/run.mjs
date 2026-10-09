@@ -7,7 +7,7 @@
 //   luân phiên thường, tắt màn hình 3 giây (app phải tự nghe lại), và đối tác nói tiếp sau khi đã nghe bản dịch
 //   (app phải mời nói lại rồi nhận đúng).
 //   Khi app "mời nói lại", người nói lặp lại 1 lần. GAP=ms đổi khoảng ngừng giữa các đoạn.
-// Biến môi trường: SLOW_TTS=ms (giọng máy tiếng nước ngoài chậm, mặc định 2500; 0 = nhanh), BLOCK_GTTS=1.
+// Biến môi trường: NOISE=0.05 (tiếng ồn nền trộn vào micro; 0 = im tuyệt đối), SLOW_TTS=ms (giọng máy tiếng nước ngoài chậm, mặc định 2500; 0 = nhanh), BLOCK_GTTS=1.
 // Cần: Chrome cài sẵn (đổi đường dẫn bằng biến CHROME), mạng ra Google (nhận diện + dịch + tải mẫu giọng).
 // Mẫu giọng tải về tools/e2e/audio/ (không commit).
 
@@ -56,7 +56,7 @@ const script = process.env.SCRIPT ? JSON.parse(process.env.SCRIPT) : [
   ['partner', `${p}-3`],
 ];
 const page =
-  `window.__CLIPS=${JSON.stringify(clips)};\n` + readTool('fakemic.js') +
+  `window.__CLIPS=${JSON.stringify(clips)};\nwindow.__noise=${Number(process.env.NOISE || 0)};\n` + readTool('fakemic.js') +
   `\nwindow.__slowTts=${Number(process.env.SLOW_TTS ?? 2500)};` +
   `\nwindow.__FULLDIAG=${Boolean(process.env.FULLDIAG)};` +
   `\nwindow.__CFG=${JSON.stringify({ partner, android, script })};\n` + readTool('e2e.js');
