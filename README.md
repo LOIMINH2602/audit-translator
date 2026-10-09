@@ -122,4 +122,6 @@ Kết quả là báo cáo tiếng Việt có mục "Vấn đề phát hiện" k�
 
 Mục **Chẩn đoán & cài đặt thử nghiệm** cuối trang vẫn còn cho việc soi chi tiết: nhật ký từng sự kiện (có dòng `QUYẾT ĐỊNH` cho mỗi câu: bên nào thắng, mỗi recognizer nghe ra gì, Google dò ra tiếng gì), đọc thử từng giọng, nút Thử dịch.
 
+Khi đang nghe, app giữ màn hình sáng. Android ngừng micro khi trang bị ẩn (tắt màn hình, chuyển app); app tự nghe lại khi trang hiện lại (`src/js/keepalive.js`).
+
 Màn Hội trường: khi bật "Đọc to", mic tạm ngừng trong lúc đọc để không nghe lại bản dịch rồi dịch tiếp thành vòng lặp; câu nói chen vào lúc đó có thể bị hụt.

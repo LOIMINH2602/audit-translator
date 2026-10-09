@@ -7,6 +7,7 @@ import { translate } from './translate.js';
 import { parseGlossary, applyGlossary } from './glossary.js';
 import { speak, cancel } from './tts.js';
 import { diag } from './diagnostics.js';
+import { holdScreen, classifyMicError } from './keepalive.js';
 
 export function initMeeting() {
   const log = [];
@@ -17,17 +18,30 @@ export function initMeeting() {
     name: 'hội-trường',
     lang: currentLang,
     onFinal: (text) => text && handle(text),
-    onError: (err) => {
-      if (err === 'not-allowed' || err === 'service-not-allowed') {
+    onError: async (err) => {
+      const kind = await classifyMicError(err);
+      // lỗi tạm (network, audio-capture...): recognizer tự khởi động lại, chỉ ghi nhật ký
+      if (!kind) return diag('LỖI hội-trường: ' + err);
+      if (!running) return;
+      if (kind === 'denied') {
         setError($('mtgErr'), 'Chưa cấp quyền micro.');
         rec.stop();
-        setRunning(false);
-      } else {
-        // lỗi tạm (network, audio-capture...): recognizer tự khởi động lại, chỉ ghi nhật ký
-        diag('LỖI hội-trường: ' + err);
+        return setRunning(false);
       }
+      // trang ẩn: chờ hiện lại (visibilitychange); lỗi tạm: nghe lại
+      diag(`Micro bị ngắt (hội-trường: ${err}) — ${kind === 'hidden' ? 'trang đang ẩn, chờ hiện lại' : 'thử nghe lại'}`);
+      if (kind === 'transient') setTimeout(() => running && !speaking && rec.start(), 800);
     },
     onLog: diag,
+  });
+
+  let speaking = false;
+  // Android ngừng micro khi trang ẩn (keepalive.js): hiện lại thì nghe tiếp
+  document.addEventListener('visibilitychange', () => {
+    if (!running || document.visibilityState !== 'visible' || speaking) return;
+    diag('Trang hiện lại → nghe lại (hội trường)');
+    setError($('mtgErr'), 'App vừa bị ẩn (tắt màn hình hoặc chuyển app) nên Android ngừng micro. Đã nghe lại.');
+    rec.start();
   });
 
   async function handle(text) {
@@ -40,8 +54,13 @@ export function initMeeting() {
       if ($('mtgSpeak').checked) {
         // tắt mic khi đọc, nếu không mic nghe lại bản dịch tiếng Việt rồi dịch tiếp thành vòng lặp
         rec.pause();
-        await speak(out, 'vi-VN', { onError: (err) => diag('LỖI TTS vi-VN: ' + err) });
-        await new Promise((res) => setTimeout(res, 300));
+        speaking = true;
+        try {
+          await speak(out, 'vi-VN', { onError: (err) => diag('LỖI TTS vi-VN: ' + err) });
+          await new Promise((res) => setTimeout(res, 300));
+        } finally {
+          speaking = false;
+        }
         if (running) rec.start();
       }
     } catch (e) {
@@ -52,6 +71,7 @@ export function initMeeting() {
 
   function setRunning(on) {
     running = on;
+    holdScreen('mtg', on); // màn hình tắt = Android ngừng micro
     $('mtgToggle').textContent = on ? 'Dừng nghe' : 'Bắt đầu nghe';
     $('mtgDot').className = 'dot' + (on ? ' live' : '');
     $('mtgStatus').textContent = on ? 'Đang nghe · ' + NAMES[currentLang] : 'Đang tắt';

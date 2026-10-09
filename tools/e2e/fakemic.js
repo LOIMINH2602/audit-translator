@@ -63,6 +63,30 @@
       return orig[m].call(this);
     };
   }
+  // 6. trang bị ẩn (tắt màn hình / chuyển app): Chrome Android cắt phiên nhận diện đang chạy và từ chối start()
+  //    bằng lỗi 'not-allowed' (mã nguồn Chromium: speech_recognition_dispatcher_host.cc, StartRequestOnUI —
+  //    "On Android, background speech recognition is not permitted"). __setHidden(true/false) giả lập việc đó.
+  let hidden = false;
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden ? 'hidden' : 'visible') });
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+  const deny = (r) => setTimeout(() => { r.onerror && r.onerror({ error: 'not-allowed' }); r.onend && r.onend(); }, 50);
+  window.__setHidden = (h) => {
+    hidden = h;
+    document.dispatchEvent(new Event('visibilitychange'));
+    if (h && window.__androidLike && active) {
+      const a = active;
+      active = null;
+      clearTimeout(a.__t);
+      a.__pending = false;
+      try { orig.abort.call(a); } catch (_) {}
+      deny(a);
+    }
+  };
+  const startAndroid = SR.prototype.start;
+  SR.prototype.start = function () {
+    if (window.__androidLike && hidden) return deny(this);
+    return startAndroid.call(this);
+  };
   // 5. giọng máy tiếng nước ngoài chậm: Lợi Minh báo chiều Việt → nước ngoài rất chậm (giọng chưa tải về máy,
   //    Chrome Android setLanguage mỗi lần đổi tiếng). Giả lập: chỉ giọng không phải tiếng Việt chờ __slowTts ms.
   const speak = speechSynthesis.speak.bind(speechSynthesis);

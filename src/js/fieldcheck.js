@@ -63,7 +63,8 @@ const s1 = (ms) => (ms / 1000).toFixed(1).replace('.', ',') + ' giây';
 //   output: 'bt' | 'speaker',
 //   ears: { idle, mic, phone } — mỗi cái { left, right } hoặc null (không đo),
 //   base: trials, afterMic: trials,
-//   track: { tried, ok, text, err } — nhận diện qua micro điện thoại (start(track)),
+//   track: { tried, ok, text, err, androidBlocked } — nhận diện qua micro điện thoại (start(track)); androidBlocked:
+//          Android, không đo (Chrome Android luôn từ chối start(track)),
 //   chain: [{ said, out, textMs, translateMs, ttsStartMs, appMs, tapMs, early, err, engine }]
 // }
 // Trả về { lines: [{ level, text }], issues: [text], summary } — summary gọn để so 2 lần đo (tai nghe / loa).
@@ -83,7 +84,7 @@ export function analyze(r) {
     const lvl = (x) => (x === 'stereo' || x === 'swapped' ? 'ok' : x === 'unknown' ? 'info' : 'bad');
     add(lvl(v.idle), `Tai trái/phải khi micro tắt: ${earText(v.idle)}`);
     add(lvl(v.mic), `Tai trái/phải khi nhận diện giọng nói đang bật: ${earText(v.mic)}`);
-    add(lvl(v.phone), `Tai trái/phải khi app giữ micro điện thoại: ${earText(v.phone)}`);
+    if (!(r.track && r.track.androidBlocked)) add(lvl(v.phone), `Tai trái/phải khi app giữ micro điện thoại: ${earText(v.phone)}`);
     const sep = (x) => x === 'stereo' || x === 'swapped';
     if (sep(v.idle) && ['mono', 'silent', 'partial', 'phone'].includes(v.mic)) {
       const how = { mono: ' (2 tai nghe như nhau)', silent: ' và máy tắt hẳn tiếng phát ra', phone: ': tiếng chuyển ra điện thoại', partial: ' (chỉ còn 1 bên)' }[v.mic];
@@ -133,7 +134,10 @@ export function analyze(r) {
   if (t.tried) {
     add(t.ok ? 'ok' : 'warn', `Nhận diện qua micro điện thoại do app giữ: ${t.ok ? `chạy được ("${t.text}")` : 'KHÔNG chạy được' + (t.err ? ` (${t.err})` : '')}`);
   }
-  const optionB = bt && t.ok && phoneSep;
+  if (t.androidBlocked) {
+    add('info', 'Bỏ phần "app giữ micro điện thoại": Chrome Android không cho nhận diện giọng nói qua micro do app giữ (mã nguồn Chrome), nên không thể ép dùng micro điện thoại để tai nghe khỏi đổi chế độ.');
+  }
+  const optionB = Boolean(bt && t.ok && phoneSep);
   if (bt && t.tried) {
     add(optionB ? 'ok' : 'info', optionB
       ? 'Hướng B làm được: app giữ micro điện thoại, tai nghe vẫn ở chế độ nghe nhạc (tách tai, không phải chuyển chế độ mỗi lượt).'

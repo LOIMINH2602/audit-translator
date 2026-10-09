@@ -64,6 +64,20 @@
   }
 
   for (const [side, clips] of cfg.script) {
+    // ['hide', ms]: tắt màn hình / chuyển app ms rồi quay lại — app phải tự nghe lại, không tắt hẳn
+    if (side === 'hide') {
+      const before = __dialogue.state().log.length;
+      const h0 = out.hiddenMs;
+      __setHidden(true);
+      await sleep(clips);
+      __setHidden(false);
+      out.hiddenMs = h0; // ẩn có chủ đích, không phải cửa sổ test bị che
+      await sleep(cfg.replyMs ?? 300);
+      const s = __dialogue.state();
+      const ok = s.running;
+      out.steps.push({ said: `ẩn trang ${clips}ms`, turnBefore: s.turn, res: ok ? 'ĐÚNG' : 'APP TẮT', ok, parts: 0, segs: s.log.length - before, hear: null, got: ok ? 'app vẫn chạy' : 'app tắt: ' + $('dlgErr').textContent });
+      continue;
+    }
     let r = await once(side, clips);
     if (r.res === 'MỜI NÓI LẠI') {
       await sleep(cfg.replyMs ?? 300);

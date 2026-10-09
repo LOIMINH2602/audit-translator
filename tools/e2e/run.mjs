@@ -4,7 +4,8 @@
 // - "android": giả lập Chrome Android/thiết bị chỉ cho 1 phiên nhận diện (phiên mới huỷ phiên cũ — hành vi
 //   đã đo thật trên Chrome). App sẽ dò ra và chạy chế độ luân phiên.
 // - Kịch bản 7 lượt: đối tác trình bày 3 đoạn ngắt quãng (ngừng 1,2s), tôi nói 2 đoạn, câu ngắn "Đúng rồi",
-//   luân phiên thường, và đối tác nói tiếp sau khi đã nghe bản dịch (app phải mời nói lại rồi nhận đúng).
+//   luân phiên thường, tắt màn hình 3 giây (app phải tự nghe lại), và đối tác nói tiếp sau khi đã nghe bản dịch
+//   (app phải mời nói lại rồi nhận đúng).
 //   Khi app "mời nói lại", người nói lặp lại 1 lần. GAP=ms đổi khoảng ngừng giữa các đoạn.
 // Biến môi trường: SLOW_TTS=ms (giọng máy tiếng nước ngoài chậm, mặc định 2500; 0 = nhanh), BLOCK_GTTS=1.
 // Cần: Chrome cài sẵn (đổi đường dẫn bằng biến CHROME), mạng ra Google (nhận diện + dịch + tải mẫu giọng).
@@ -49,6 +50,7 @@ const script = process.env.SCRIPT ? JSON.parse(process.env.SCRIPT) : [
   ['partner', [`${p}-1`, gap, `${p}-2`, gap, `${p}-3`]],
   ['me', 'vi-24'],
   ['partner', `${p}-4`],
+  ['hide', 3000], // tắt màn hình 3 giây giữa chừng (Lợi Minh 09/10: app báo "Chưa cấp quyền micro" rồi tắt)
   ['me', ['vi-25', gap, 'vi-23']],
   ['partner', `${p}-2`],
   ['partner', `${p}-3`],

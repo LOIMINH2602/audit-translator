@@ -95,6 +95,21 @@ test('analyze: loa điện thoại bỏ phần tai; câu lỗi / chạm sớm kh
   assert.ok(!a.lines.some((l) => /NaN|undefined/.test(l.text)), JSON.stringify(a.lines));
 });
 
+test('analyze: Android bỏ phần giữ micro điện thoại, nói rõ lý do, không báo hướng B', () => {
+  const a = analyze({
+    output: 'bt',
+    ears: { idle: { left: 'left', right: 'right' }, mic: { left: 'both', right: 'both' }, phone: null },
+    base: trials([300, 300, 300]),
+    afterMic: trials([300, 310, 320]),
+    track: { tried: false, androidBlocked: true },
+    chain: [],
+  });
+  assert.ok(a.lines.some((l) => /Chrome Android không cho nhận diện giọng nói qua micro do app giữ/.test(l.text)));
+  assert.ok(!a.lines.some((l) => /khi app giữ micro điện thoại:/.test(l.text)));
+  assert.ok(!a.lines.some((l) => /Hướng B/.test(l.text)));
+  assert.equal(a.summary.optionB, false);
+});
+
 test('compare: chỉ so khi có đủ 2 lần đo', () => {
   assert.deepEqual(compare(null, { switchMs: 1 }), []);
   const c = compare({ switchMs: 1200, hearMs: 3000 }, { switchMs: 50, hearMs: null });

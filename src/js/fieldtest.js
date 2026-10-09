@@ -5,6 +5,8 @@
 //      Chênh lệch = thời gian tai nghe chuyển từ chế độ cuộc gọi sang phát. Đếm số tiếng bíp nghe được = mất tiếng đầu.
 //   3. Tai trái/phải trong lúc nhận diện giọng nói đang bật (đúng cách app nghe).
 //   4. App giữ micro điện thoại (getUserMedia) và nhận diện qua track đó: tai nghe có giữ được chế độ phát không.
+//      KHÔNG chạy trên Android: Chrome Android từ chối mọi start(track) bằng 'not-allowed' (mã nguồn Chromium,
+//      speech_recognition_dispatcher_host.cc: params->audio_forwarder → kNotAllowed) — bỏ để khỏi mất thời gian đo.
 //   5. Chuỗi thật: đọc 1 câu tiếng Việt → chốt câu → dịch → đọc bản dịch; chạm khi nghe thấy.
 // Mọi bước đều có giới hạn thời gian; bấm "Dừng bài đo" là dừng ngay và vẫn lập báo cáo phần đã đo.
 
@@ -16,8 +18,10 @@ import { speak, warmUp, cancel as ttsCancel, engineFor } from './tts.js';
 import { diag } from './diagnostics.js';
 import { analyze, compare, BEEPS } from './fieldcheck.js';
 import { add, issue, ask, showStatus, finish, resetReport } from './selftest.js';
+import { holdScreen } from './keepalive.js';
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const ANDROID = /Android/i.test(navigator.userAgent);
 const STORE = 'audit.field.v1'; // { bt: summary, speaker: summary } — để so 2 lần đo
 const REACTION_TRIALS = 3;
 const CHAIN_SENTENCES = 2;
@@ -395,6 +399,7 @@ async function run() {
   $('stStart').disabled = true;
   $('stPartner').disabled = true;
   resetReport();
+  holdScreen('field', true); // màn hình tắt = Android ngừng micro, bài đo hỏng
   audioCtx(); // tạo trong lúc người dùng vừa chạm (Chrome chỉ cho phát âm thanh sau thao tác chạm)
   const partner = $('stPartner').value;
   const r = { output: null, ears: { idle: null, mic: null, phone: null }, base: [], afterMic: [], track: { tried: false }, chain: [] };
@@ -425,9 +430,13 @@ async function run() {
       } finally {
         k.close();
       }
-      const p = await phoneMicTest(ins, bt);
-      r.ears.phone = p.ears;
-      r.track = p.track;
+      if (ANDROID) {
+        r.track = { tried: false, androidBlocked: true };
+      } else {
+        const p = await phoneMicTest(ins, bt);
+        r.ears.phone = p.ears;
+        r.track = p.track;
+      }
     }
 
     await warmUp(partner); // như màn 1:1: chọn giọng đọc trước khi đọc thật
@@ -442,6 +451,7 @@ async function run() {
     }
   } finally {
     for (const c of [...cleanups]) c();
+    holdScreen('field', false);
     ttsCancel();
     if (ctx) ctx.close().catch(() => {});
     ctx = null;

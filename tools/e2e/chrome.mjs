@@ -33,7 +33,8 @@ export async function loadClips(samples) {
 export const readTool = (name) => readFileSync(join(here, name), 'utf8');
 
 // Mở trang, đánh giá `page` (biểu thức trả Promise), trả về giá trị. errors: mảng lỗi JS trong trang.
-export async function runInChrome(page, { errors = [], timeoutMs = 400000 } = {}) {
+// ua: giả user-agent (vd. Chrome Android để app chạy nhánh dành cho Android); trang được tải lại sau khi đặt.
+export async function runInChrome(page, { errors = [], timeoutMs = 400000, ua = null } = {}) {
   const server = process.env.BASE_URL ? null : spawn(process.execPath, [join(root, 'tools', 'serve.mjs')], { env: { ...process.env, PORT: String(PORT) }, stdio: 'ignore' });
   const profile = mkdtempSync(join(tmpdir(), 'audit-e2e-'));
   const dbg = 9300 + Math.floor(Math.random() * 500);
@@ -64,6 +65,10 @@ export async function runInChrome(page, { errors = [], timeoutMs = 400000 } = {}
     };
     const send = (method, params = {}) => new Promise((res) => { const i = ++id; pending.set(i, res); ws.send(JSON.stringify({ id: i, method, params })); });
     await send('Runtime.enable');
+    if (ua) {
+      await send('Emulation.setUserAgentOverride', { userAgent: ua });
+      await send('Page.reload', { ignoreCache: true });
+    }
     // BLOCK_GTTS=1: chặn file đọc của Google Dịch (giả lập mất mạng / Google chặn) để test đường dự phòng giọng máy
     if (process.env.BLOCK_GTTS) {
       await send('Network.enable');

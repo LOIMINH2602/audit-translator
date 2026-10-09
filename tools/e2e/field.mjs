@@ -5,7 +5,7 @@
 // 3 lần đo nối tiếp trong cùng trang:
 //   A. tai nghe "xấu": micro bật → mono, chậm thêm 900ms, mất 1 tiếng bíp; giữ micro điện thoại → vẫn stereo; chạm sớm 1 lần.
 //   B. loa điện thoại, không trễ → báo cáo phải có dòng "So sánh" với lần A.
-//   D. bấm "Dừng bài đo" lúc đang giữ micro điện thoại → dừng gọn, có báo cáo phần đã đo.
+//   D. bấm "Dừng bài đo" lúc nhận diện đang bật → dừng gọn, có báo cáo phần đã đo.
 //   C. tai nghe "tốt": micro bật vẫn stereo, không trễ (chạy sau D: chứng minh dừng xong đo lại được).
 
 import { loadClips, readTool, runInChrome } from './chrome.mjs';
@@ -19,7 +19,7 @@ const clips = await loadClips({
 const runs = [
   { name: 'A tai nghe xấu', output: 'bt', micEars: 'mono', phoneEars: 'stereo', switchMs: 900, clipMic: 1, earlyOnce: true },
   { name: 'B loa', output: 'speaker', switchMs: 0, clipMic: 0 },
-  { name: 'D dừng giữa chừng', output: 'bt', micEars: 'stereo', phoneEars: 'stereo', switchMs: 0, clipMic: 0, stopAt: 'ear-phone-left' },
+  { name: 'D dừng giữa chừng', output: 'bt', micEars: 'stereo', phoneEars: 'stereo', switchMs: 0, clipMic: 0, stopAt: 'ear-mic-left' },
   { name: 'C tai nghe tốt', output: 'bt', micEars: 'stereo', phoneEars: 'stereo', switchMs: 0, clipMic: 0 },
 ];
 const page =
@@ -28,7 +28,9 @@ const page =
   `\nwindow.__FCFG=${JSON.stringify({ partner: process.env.PARTNER || 'en-US', android, runs })};\n` + readTool('field-e2e.js');
 
 const errors = [];
-const res = await runInChrome(page, { errors });
+// android: giả user-agent Chrome Android → app bỏ bước "giữ micro điện thoại" (Chrome Android chặn start(track))
+const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36';
+const res = await runInChrome(page, { errors, ua: android ? ANDROID_UA : null });
 if (!res) process.exit(2);
 
 let fail = 0;
@@ -58,8 +60,13 @@ for (const r of res) {
   if (sim.output === 'bt') {
     ok(s.ears.idle === 'stereo', `tai lúc micro tắt: ${s.ears.idle}`);
     ok(s.ears.mic === sim.micEars, `tai lúc micro bật: ${s.ears.mic} (giả lập ${sim.micEars})`);
-    ok(s.ears.phone === sim.phoneEars, `tai lúc giữ micro điện thoại: ${s.ears.phone} (giả lập ${sim.phoneEars})`);
-    ok(d.track.tried && d.track.ok, `nhận diện qua micro điện thoại: "${d.track.text || d.track.err}"`);
+    if (android) {
+      ok(d.track.androidBlocked && !d.track.tried && d.ears.phone === null && !r.steps.some((x) => /^ear-phone|^track/.test(x)), 'Android: bỏ bước giữ micro điện thoại');
+      ok(/Chrome Android không cho nhận diện giọng nói qua micro do app giữ/.test(report), 'Android: báo cáo nói rõ lý do bỏ');
+    } else {
+      ok(s.ears.phone === sim.phoneEars, `tai lúc giữ micro điện thoại: ${s.ears.phone} (giả lập ${sim.phoneEars})`);
+      ok(d.track.tried && d.track.ok, `nhận diện qua micro điện thoại: "${d.track.text || d.track.err}"`);
+    }
   } else {
     ok(d.ears.idle === null && !d.track.tried, 'loa: bỏ phần tai trái/phải');
   }

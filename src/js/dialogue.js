@@ -21,6 +21,7 @@ import { pickSpeaker, syllables, isEcho } from './speaker.js';
 import { parseGlossary, applyGlossary } from './glossary.js';
 import { speak, canSpeak, warmUp, getMode, setMode, resetAuto, cancel as cancelSpeech } from './tts.js';
 import { diag } from './diagnostics.js';
+import { holdScreen, classifyMicError } from './keepalive.js';
 
 // Mở lại mic ngay khi đọc xong (không chờ dư âm): đuôi bản dịch lọt vào mic thì isEcho lọc trong ECHO_WINDOW_MS.
 const ECHO_WINDOW_MS = 3000;
@@ -69,16 +70,56 @@ export function initDialogue() {
 
   const arbiter = createArbiter({}, (cands) => handle(cands));
 
+  // 'not-allowed' trên Android thường KHÔNG phải bị chặn quyền mà là trang bị ẩn (xem keepalive.js): chỉ dừng hẳn
+  // khi quyền micro thật sự bị chặn; trang ẩn thì chờ hiện lại; còn lại thử nghe lại (tối đa 3 lần / 15 giây).
+  let micRetries = [];
+  let resumeTimer = null;
   function onError(name) {
-    return (err) => {
-      if (err === 'not-allowed' || err === 'service-not-allowed') {
+    return async (err) => {
+      const kind = await classifyMicError(err);
+      if (!kind) return diag(`LỖI ${name}: ${err}`);
+      if (!running) return;
+      if (kind === 'denied') {
         setError($('dlgErr'), 'Chưa cấp quyền micro. Vào cài đặt trình duyệt để cho phép.');
-        stop();
-      } else {
-        diag(`LỖI ${name}: ${err}`);
+        return stop();
       }
+      diag(`Micro bị ngắt (${name}: ${err}) — ${kind === 'hidden' ? 'trang đang ẩn, chờ hiện lại' : 'thử nghe lại'}`);
+      if (kind === 'hidden') return; // visibilitychange mở lại mic
+      const now = performance.now();
+      micRetries = micRetries.filter((t) => now - t < 15000).concat(now);
+      if (micRetries.length > 3) {
+        setError($('dlgErr'), 'Micro bị ngắt liên tục: có thể app khác đang dùng micro (cuộc gọi, ghi âm, Zalo). Đóng app đó rồi bấm Bắt đầu nghe.');
+        return stop();
+      }
+      clearTimeout(resumeTimer);
+      resumeTimer = setTimeout(() => {
+        if (running && !busy && document.visibilityState === 'visible') {
+          pauseAll();
+          listen();
+        }
+      }, 800);
     };
   }
+
+  // Trang ẩn (tắt màn hình, chuyển app): Android ngừng micro → tạm dừng. Hiện lại → nghe tiếp, giữ nguyên lượt và
+  // các đoạn đã dịch chưa đọc.
+  document.addEventListener('visibilitychange', () => {
+    if (!running) return;
+    if (document.visibilityState !== 'visible') {
+      clearTimeout(holdTimer);
+      clearTimeout(speechEndTimer);
+      clearTimeout(resumeTimer);
+      if (!busy) pauseAll();
+      diag('Trang bị ẩn (tắt màn hình / chuyển app) → Android ngừng micro');
+      return;
+    }
+    diag('Trang hiện lại → nghe lại');
+    setError($('dlgErr'), 'App vừa bị ẩn (tắt màn hình hoặc chuyển app) nên Android ngừng micro. Đã nghe lại — khi audit, để app mở trên màn hình.');
+    if (busy) return; // đang đọc bản dịch: đọc xong tự nghe lại
+    pauseAll();
+    listen();
+    armHold();
+  });
 
   function buildRecognizers() {
     if (mode === 'parallel') {
@@ -412,6 +453,8 @@ export function initDialogue() {
       $('dlgStatus').textContent = 'Đang chuẩn bị giọng đọc…';
       await warmUp(partnerLang());
       running = true;
+      micRetries = [];
+      holdScreen('dlg', true); // màn hình tắt = Android ngừng micro
       turn = 'me';
       $('dlgToggle').textContent = 'Dừng nghe';
       listen();
@@ -423,7 +466,9 @@ export function initDialogue() {
 
   function stop() {
     running = false;
+    holdScreen('dlg', false);
     clearTimeout(holdTimer);
+    clearTimeout(resumeTimer);
     floor = [];
     all().forEach((r) => r.stop());
     arbiter.reset();
