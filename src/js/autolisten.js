@@ -29,7 +29,8 @@ export async function pickDevice() {
 }
 
 // opts: { model?: 'tiny'|'base' (mặc định theo máy), device?, partner, endSilenceMs, prompt, onProgress(pct, file), onReady(info),
-//         onStage({ name, ms }), onSentence(r), onSpeaking(on), onDropped(r), onError(msg) }
+//         onStage({ name, ms }), onSentence(r), onSpeaking(on), onDropped(r), onError(msg),
+//         mode?: 'full'|'hybrid', onSegment(r) (hybrid: ngôn ngữ của câu vừa hết) }
 export function createAutoListener(opts) {
   let worker = null;
   let ctx = null;
@@ -37,6 +38,7 @@ export function createAutoListener(opts) {
   let node = null;
   let ready = null;
   const files = {};
+  const waits = new Map(); // id câu → resolve (chép lại bằng Whisper/PhoWhisper)
 
   function onMsg(e) {
     const m = e.data;
@@ -46,7 +48,9 @@ export function createAutoListener(opts) {
       const pct = Math.round((100 * all.reduce((s, f) => s + f[0], 0)) / Math.max(1, all.reduce((s, f) => s + f[1], 0)));
       opts.onProgress && opts.onProgress(pct, m.file);
     } else if (m.type === 'stage') opts.onStage && opts.onStage(m);
-    else if (m.type === 'sentence') opts.onSentence(m);
+    else if (m.type === 'sentence') opts.onSentence && opts.onSentence(m);
+    else if (m.type === 'segment') opts.onSegment && opts.onSegment(m);
+    else if (m.type === 'fallback') { const w = waits.get(m.id); if (w) { waits.delete(m.id); w(m); } }
     else if (m.type === 'speaking') opts.onSpeaking && opts.onSpeaking(m.on);
     else if (m.type === 'dropped') opts.onDropped && opts.onDropped(m);
     else if (m.type === 'error') opts.onError && opts.onError(m.message);
@@ -83,7 +87,7 @@ export function createAutoListener(opts) {
         // Đo 10/10/2026: màn 1:1 đầy đủ tiếng Hàn — tiny và base nhận người nói như nhau, khớp chữ 86% so với 85%; tiny
         // nhanh hơn và tải nhẹ bằng nửa (WebGPU: 93 MB so với 187 MB; CPU: 41 MB so với 77 MB) → mặc định tiny.
         const model = opts.model || 'tiny';
-        worker.postMessage({ type: 'load', model, device, f16: hw.f16, partner: opts.partner, endSilenceMs: opts.endSilenceMs, prompt: opts.prompt });
+        worker.postMessage({ type: 'load', model, device, f16: hw.f16, partner: opts.partner, endSilenceMs: opts.endSilenceMs, prompt: opts.prompt, mode: opts.mode || 'full' });
       });
     })();
     ready.catch(() => (ready = null));
@@ -117,6 +121,13 @@ export function createAutoListener(opts) {
     stop,
     // muted: đang đọc bản dịch — bỏ âm thanh micro để không dịch lại tiếng của chính app
     config(c) { if (worker) worker.postMessage({ type: 'config', ...c }); },
+    // hybrid: chép lại câu id bằng Whisper (tiếng đối tác) / PhoWhisper (tiếng Việt). Trả về { text, model, ms }.
+    transcribe(id, lang) {
+      return new Promise((resolve) => {
+        waits.set(id, resolve);
+        worker.postMessage({ type: 'transcribe', id, lang });
+      });
+    },
     running: () => Boolean(stream),
   };
 }

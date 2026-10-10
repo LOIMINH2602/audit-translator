@@ -23,6 +23,7 @@ import { speak, canSpeak, warmUp, getMode, setMode, resetAuto, cancel as cancelS
 import { diag } from './diagnostics.js';
 import { holdScreen, classifyMicError } from './keepalive.js';
 import { createAutoTalk } from './autotalk.js';
+import { createHybridTalk } from './hybridtalk.js';
 
 // Mở lại mic ngay khi đọc xong (không chờ dư âm): đuôi bản dịch lọt vào mic thì isEcho lọc trong ECHO_WINDOW_MS.
 const ECHO_WINDOW_MS = 3000;
@@ -33,9 +34,9 @@ const SPEECHEND_GRACE_MS = 350;
 const HOLD_KEY = 'audit.holdMs';
 const PROBE_KEY = 'audit.parallel.v1';
 const RATE_KEY = 'audit.ttsRate';
-// 'chrome' (luân phiên, mặc định) | 'auto' (Tự nhận người nói, Whisper trên máy — thử nghiệm: đo giọng người thật 10/10/2026,
-// Whisper tiny chỉ khớp ~50% chữ tiếng Việt so với Google 93% → bản dịch loạn). Khoá v2: ai đã lưu 'auto' từ bản .2 quay về mặc định.
-const LISTEN_KEY = 'audit.listenMode.v2';
+// 'hybrid' (mặc định: Google ra chữ + Whisper biết ai nói) | 'chrome' (luân phiên cũ) | 'auto' (chỉ Whisper — thử nghiệm: đo giọng
+// người thật 10/10/2026, Whisper tiny chỉ khớp ~50% chữ tiếng Việt so với Google 93% → bản dịch loạn).
+const LISTEN_KEY = 'audit.listenMode.v3'; // v3: 'hybrid' (Google ra chữ + Whisper biết ai nói) thành mặc định
 const ENDSIL_KEY = 'audit.endSilMs';
 const WHO = { me: 'Tôi', partner: 'Đối tác' };
 // localStorage có thể bị chặn (chế độ ẩn danh...): lỗi thì coi như không có
@@ -46,7 +47,7 @@ const other = (side) => (side === 'partner' ? 'me' : 'partner');
 export function initDialogue() {
   const log = [];
   let usingAuto = false; // đang chạy chế độ Tự nhận người nói
-  const auto = createAutoTalk({
+  const talkCtx = {
     log,
     partnerLang: () => $('partnerLang').value,
     endSilenceMs: () => Number($('endSilMs').value) || 800,
@@ -54,7 +55,10 @@ export function initDialogue() {
     // test tự động ép mô hình/cách chạy (đọc lúc bấm Bắt đầu); người dùng: tự chọn theo máy
     get model() { return window.__autoModel; },
     get device() { return window.__autoDevice; },
-  });
+  };
+  const autoTalk = createAutoTalk(talkCtx);
+  const hybridTalk = createHybridTalk(talkCtx);
+  let auto = hybridTalk; // bộ đang dùng khi usingAuto
   let running = false;
   let busy = false; // đang dịch/đọc 1 câu: bỏ qua mọi kết quả nhận diện
   let mode = null; // 'parallel' | 'turn'
@@ -524,7 +528,8 @@ export function initDialogue() {
     $('dlgToggle').disabled = true;
     $('dlgStatus').textContent = 'Đang kiểm tra micro…';
     try {
-      if ($('listenMode').value === 'auto') {
+      if ($('listenMode').value !== 'chrome') {
+        auto = $('listenMode').value === 'hybrid' ? hybridTalk : autoTalk;
         await warmUp(partnerLang());
         try {
           await auto.start();
@@ -615,7 +620,7 @@ export function initDialogue() {
   };
 
   $('dlgToggle').onclick = () => {
-    if (!supported && $('listenMode').value !== 'auto') return setError($('dlgErr'), 'Trình duyệt không hỗ trợ nhận diện giọng nói. Dùng Google Chrome.');
+    if (!supported && $('listenMode').value === 'chrome') return setError($('dlgErr'), 'Trình duyệt không hỗ trợ nhận diện giọng nói. Dùng Google Chrome.');
     if (running) stop();
     else start();
   };
@@ -631,7 +636,7 @@ export function initDialogue() {
   };
   // Cách nghe: Tự nhận người nói (mặc định) hoặc Chrome luân phiên; mỗi cách có ô thời gian chờ riêng
   const showListenMode = () => {
-    const a = $('listenMode').value === 'auto';
+    const a = $('listenMode').value !== 'chrome';
     $('endSilBox').hidden = !a;
     $('holdBox').hidden = a;
   };
@@ -645,7 +650,8 @@ export function initDialogue() {
   if (readPref(ENDSIL_KEY)) $('endSilMs').value = readPref(ENDSIL_KEY);
   $('endSilMs').onchange = () => {
     writePref(ENDSIL_KEY, $('endSilMs').value);
-    auto.config({ endSilenceMs: Number($('endSilMs').value) });
+    autoTalk.config({ endSilenceMs: Number($('endSilMs').value) });
+    hybridTalk.config({ endSilenceMs: Number($('endSilMs').value) });
   };
   if (readPref(HOLD_KEY)) $('holdMs').value = readPref(HOLD_KEY);
   $('holdMs').onchange = () => writePref(HOLD_KEY, $('holdMs').value);

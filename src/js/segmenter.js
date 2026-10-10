@@ -62,6 +62,8 @@ export function createSegmenter({
     // đang có người nói (để hiện trạng thái / hoãn đọc bản dịch)
     speaking: () => Boolean(cur && cur.silence * FRAME_MS < 200),
     setEndSilence(ms) { silenceMs = ms; },
+    endSilence: () => silenceMs,
+    active: () => Boolean(cur), // đang trong 1 câu
     // Nhận diện sớm: người nói đã ngừng >= ms nhưng chưa đủ thời gian chờ hết câu → trả câu tới lúc này để nhận diện
     // trước; khi câu kết thúc với cùng { id, version } (không nói thêm) thì dùng luôn kết quả đó.
     peek(ms) {

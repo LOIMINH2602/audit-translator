@@ -1,6 +1,7 @@
 // Test đầu-cuối chế độ "Tự nhận người nói" (Whisper + VAD chạy trên máy) với micro giả, không cần điện thoại.
 //   node tools/e2e/auto.mjs [ko-KR|en-US|zh-CN|ja-JP] [tiny|base] [wasm|webgpu]   NOISE=0.05 ENDSIL=600
-//   DLG=1: chạy cả màn 1:1 (dịch, đọc, bỏ âm thanh micro lúc đọc) thay vì chỉ bộ nghe
+//   DLG=1: chạy cả màn 1:1 (dịch, đọc, bỏ âm thanh micro lúc đọc) thay vì chỉ bộ nghe; MODE=hybrid|auto (cách nghe);
+//   ANDROID=1 giả lập Chrome Android; REAL=1 dùng giọng người thật
 // Kịch bản hội thoại xen kẽ, có câu trả lời rất ngắn ("Vâng", "네") và người nói nói 2 câu liền.
 // Độ chính xác giống trên điện thoại; tốc độ thì không (máy tính nhanh hơn) — tốc độ thật đo trên máy bằng tab Tự kiểm tra.
 
@@ -31,16 +32,36 @@ const S = {
   'ja-3': ['ja', '倉庫で不適合が一件見つかりました。'], 'ja-4': ['ja', '従業員の教育記録はどこにありますか。'],
   'ja-s1': ['ja', 'はい。'],
 };
-const clips = await loadClips(S);
+let clips = await loadClips(S);
 const ps = (k) => (p === 'zh-CN' ? `zh-${k}` : `${p}-${k}`);
 const pc = (n) => `${p}-${n}`;
 // [ai nói, mẫu, ngừng sau đó ms]
-const script = [
+let script = [
   ['me', 'vi-7', 1500], ['partner', pc(1), 1500], ['me', 'vi-s1', 1500], ['partner', pc(2), 900], ['partner', pc(3), 1500],
   ['me', 'vi-25', 1500], ['partner', ps('s1'), 1500], ['me', 'vi-t2', 1500], ['partner', pc(4), 1500], ['me', 'vi-24', 1500], ['me', 'vi-23', 1500],
 ];
-const truth = Object.fromEntries(Object.entries(S).map(([k, v]) => [k, v[1]]));
-const cfg = { partner, partnerW: pw, model, device, endSilenceMs: Number(process.env.ENDSIL || 600), script, truth, prompt: process.env.PROMPT ? 'ISO 9001, KPI, FSC, BRC, CAPA.' : null };
+let truth = Object.fromEntries(Object.entries(S).map(([k, v]) => [k, v[1]]));
+// REAL=1: giọng NGƯỜI THẬT (tools/whisper/real/, tải bằng tools/whisper/fetch-real.mjs) cho câu dài; câu ngắn vẫn là mẫu Google
+if (process.env.REAL) {
+  const { readFileSync } = await import('node:fs');
+  const dir = new URL('../whisper/real/', import.meta.url);
+  const idx = JSON.parse(readFileSync(new URL('index.json', dir), 'utf8'));
+  const pl = p === 'zh-CN' ? 'zh' : p;
+  const vi = idx.filter((x) => x.lang === 'vi');
+  const pr = idx.filter((x) => x.lang === pl);
+  if (!pr.length) throw new Error('không có giọng thật tiếng ' + pl + ' trong tools/whisper/real');
+  for (const x of [...vi.slice(0, 6), ...pr.slice(0, 6)]) {
+    const k = 'real-' + x.file.replace(/\.\w+$/, '');
+    clips[k] = readFileSync(new URL(x.file, dir)).toString('base64');
+    truth[k] = x.text;
+  }
+  const V = (i) => 'real-' + vi[i].file.replace(/\.\w+$/, '');
+  const P = (i) => 'real-' + pr[i].file.replace(/\.\w+$/, '');
+  script.splice(0, script.length,
+    ['me', V(0)], ['partner', P(0)], ['me', V(1)], ['me', V(2)], ['partner', P(1)], ['partner', P(2)],
+    ['me', 'vi-24'], ['partner', P(3)], ['partner', ps('s1')], ['me', V(3)], ['me', V(4)], ['partner', P(4)]);
+}
+const cfg = { partner, partnerW: pw, model, device, listenMode: process.env.MODE || 'auto', android: Boolean(process.env.ANDROID), endSilenceMs: Number(process.env.ENDSIL || 600), script, truth, prompt: process.env.PROMPT ? 'ISO 9001, KPI, FSC, BRC, CAPA.' : null };
 const page = `window.__CLIPS=${JSON.stringify(clips)};\nwindow.__noise=${Number(process.env.NOISE || 0)};\n` + readTool('fakemic.js') +
   `\nwindow.__AUTO=${JSON.stringify(cfg)};\n` + readTool('auto-page.js');
 const errors = [];
@@ -53,9 +74,11 @@ if (process.env.DLG) {
   const ok = d.steps.filter((x) => x.ok).length;
   const hs = d.steps.filter((x) => x.hear != null).map((x) => x.hear);
   const avg = (a) => Math.round(a.reduce((s, v) => s + v, 0) / (a.length || 1));
-  console.log(`${partner} · màn 1:1 Tự nhận người nói (whisper-${model}) · nạp ${d.loadMs}ms · đúng ${ok}/${d.steps.length} · dứt lời → nghe bản dịch TB ${avg(hs)}ms (max ${Math.max(...hs)}) · khớp chữ TB ${avg(d.steps.map((x) => x.sim * 100))}% · câu thừa ${d.extra}`);
-  for (const x of d.steps) console.log(`  ${x.ok ? 'ĐÚNG' : 'SAI '} ${x.side.padEnd(7)} ${x.clip.padEnd(8)} nghe ${x.hear}ms · ${x.got.slice(0, 260)}`);
-  for (const l of d.diag) if (/Bỏ|LỖI/.test(l)) console.log('    ' + l.slice(9, 200));
+  console.log(`${partner} · màn 1:1 cách nghe ${cfg.listenMode} (whisper-${model}) · nạp ${d.loadMs}ms · đúng ${ok}/${d.steps.length} · dứt lời → nghe bản dịch TB ${avg(hs)}ms (max ${Math.max(...hs)}) · khớp chữ TB ${avg(d.steps.map((x) => x.sim * 100))}% · câu thừa ${d.extra}`);
+  const all = d.steps.flatMap((x) => x.srcs);
+  console.log(`  nguồn chữ: Google ${all.filter((x) => x === 'Google').length} · PhoWhisper ${all.filter((x) => x === 'PhoWhisper').length} · Whisper ${all.filter((x) => x === 'Whisper').length}`);
+  for (const x of d.steps) console.log(`  ${x.ok ? 'ĐÚNG' : 'SAI '} ${x.side.padEnd(7)} ${x.clip.padEnd(10)} nghe ${x.hear}ms · khớp ${x.sim} · ${x.got.slice(0, 230)}`);
+  for (const l of d.diag) if (process.env.FULLDIAG ? true : /Bỏ|LỖI|chuyển/.test(l)) console.log('    ' + l.slice(9, 220));
   if (errors.length) console.log('  LỖI JS:', errors.slice(0, 3));
   process.exit(ok === d.steps.length && !d.extra && !errors.length ? 0 : 1);
 }

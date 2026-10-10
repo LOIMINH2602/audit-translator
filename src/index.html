@@ -40,10 +40,11 @@
       </select>
       <span class="label">Cách nghe</span>
       <select id="listenMode">
-        <option value="chrome" selected>Chrome luân phiên — chữ chính xác nhất</option>
-        <option value="auto">Tự nhận người nói (thử nghiệm — chữ tiếng Việt còn kém)</option>
+        <option value="hybrid" selected>Tự nhận người nói — Google ra chữ, Whisper biết ai nói</option>
+        <option value="chrome">Chrome luân phiên (cách cũ, phải theo lượt)</option>
+        <option value="auto">Chỉ Whisper (thử nghiệm — chữ tiếng Việt kém)</option>
       </select>
-      <div id="endSilBox" hidden>
+      <div id="endSilBox">
         <span class="label">Thời gian chờ nhận biết hết câu</span>
         <select id="endSilMs">
           <option value="500">0,5 giây — nhanh nhất</option>
@@ -52,9 +53,9 @@
           <option value="1800">1,8 giây — người nói hay ngừng để nghĩ</option>
           <option value="2500">2,5 giây</option>
         </select>
-        <p class="sub" style="margin:4px 0 0">Lần đầu bấm Bắt đầu, app tải bộ nhận diện giọng nói chạy ngay trên điện thoại (40–95 MB tuỳ máy, nên dùng Wi-Fi). Các lần sau dùng lại, không tải nữa.</p>
+        <p class="sub" style="margin:4px 0 0">Lần đầu bấm Bắt đầu, app tải bộ nhận người nói chạy trên điện thoại (khoảng 80–250 MB tuỳ máy, nên dùng Wi-Fi). Các lần sau dùng lại, không tải nữa.</p>
       </div>
-      <div id="holdBox">
+      <div id="holdBox" hidden>
         <span class="label">Kết thúc lượt nói khi im lặng</span>
         <select id="holdMs">
           <option value="1000">1 giây</option>
@@ -76,7 +77,7 @@
         <option value="1.2" selected>Nhanh</option>
         <option value="1.4">Rất nhanh</option>
       </select>
-      <p class="sub" style="margin:0">Chrome luân phiên: người đang nói cứ nói hết ý, im lặng thì app đọc bản dịch và chuyển sang người kia. Tự nhận người nói: không cần lượt, nhưng chữ tiếng Việt chưa chính xác (đang cải tiến).</p>
+      <p class="sub" style="margin:0">Cả hai người cứ nói tự nhiên, không cần bấm gì. Mỗi câu nói xong, app tự nhận là tiếng Việt hay tiếng của đối tác, dịch và đọc ngay vào tai nghe.</p>
     </div>
 
     <div class="panel">

@@ -5,10 +5,16 @@
 // Dò ngôn ngữ trong cùng 1 lần chạy với nhận diện: bộ lọc ở bước đầu của decoder chỉ cho chọn <|vi|> hoặc tiếng đối
 // tác (transformers.js 3.8.1 chưa có dò ngôn ngữ cho Whisper — mặc định tiếng Anh).
 //
-// Nhận: { type: 'load', model, device, f16, partner, endSilenceMs, prompt }, { type: 'frame', data: Float32Array(512) },
-//       { type: 'config', partner?, endSilenceMs?, muted? }, { type: 'flush' }
+// Chế độ 'hybrid' (10/10/2026, sau khi đo giọng người thật: Whisper chép chữ tiếng Việt kém — tiny ~50% — còn Google 93%;
+// điện thoại Lợi Minh cho app và Google cùng thu micro): worker CHỈ dò ngôn ngữ mỗi câu (encoder + 1 bước decoder, nhanh)
+// và gửi 'segment'; chữ lấy từ Google. Câu Google nghe sai tiếng thì trang xin 'transcribe' → chép bằng Whisper (tiếng đối
+// tác) hoặc PhoWhisper-tiny (tiếng Việt, VinAI).
+//
+// Nhận: { type: 'load', model, device, f16, partner, endSilenceMs, prompt, mode?: 'full'|'hybrid' }, { type: 'frame', data },
+//       { type: 'config', partner?, endSilenceMs?, muted?, tts? }, { type: 'flush' }, { type: 'transcribe', id, lang } (hybrid)
 // Gửi:  { type: 'progress', file, loaded, total }, { type: 'stage', name, ms } (từng bước nạp), { type: 'ready', device, model, loadMs }, { type: 'speaking', on },
 //       { type: 'sentence', lang, prob, text, audioMs, asrMs, queuedMs, endAt }, { type: 'dropped', why, text }, { type: 'error', message }
+//       hybrid: { type: 'segment', id, lang, prob, audioMs, startAt, endAt, lidMs, duringTts }, { type: 'fallback', id, lang, text, ms, model }
 
 import { createSegmenter, FRAME, SR } from './segmenter.js';
 
@@ -25,11 +31,19 @@ let seg = createSegmenter();
 let lastSpeaking = false;
 let frames = []; // khung chờ VAD
 let vadBusy = false;
+let mode = 'full';
+// hybrid: app đang đọc bản dịch. Không tắt nghe (người nói có thể nói tiếp trong lúc app đọc) — chỉ đánh dấu câu nào có lúc
+// trùng giọng đọc; trang bỏ câu đó nếu Whisper nghe ra đúng tiếng app đang đọc (tiếng vọng), giữ nếu là tiếng khác.
+let tts = false;
+let segTts = false;
+let pho = null; // { processor, tokenizer, model } PhoWhisper-tiny, nạp nền sau khi sẵn sàng (chỉ hybrid)
+const kept = new Map(); // id câu → audio (hybrid: giữ vài câu gần nhất để chép lại khi Google nghe sai tiếng)
 
 const post = (m) => self.postMessage(m);
 
-async function load({ model: size = 'base', device = 'wasm', f16 = false, partner: p, endSilenceMs, prompt: pr }) {
+async function load({ model: size = 'base', device = 'wasm', f16 = false, partner: p, endSilenceMs, prompt: pr, mode: md = 'full' }) {
   const t0 = performance.now();
+  mode = md;
   T = await import(LIB);
   T.env.allowLocalModels = false;
   partner = W[p] || p;
@@ -54,9 +68,59 @@ async function load({ model: size = 'base', device = 'wasm', f16 = false, partne
   model = await T.WhisperForConditionalGeneration.from_pretrained(id, { dtype, device, progress_callback });
   stage(`Whisper ${size} (${device})`);
   // chạy thử 1 lần cho nóng máy (biên dịch shader WebGPU / khởi tạo wasm): câu thật đầu tiên không bị chậm
-  await transcribe(new Float32Array(SR));
+  if (mode === 'hybrid') await lid(new Float32Array(SR));
+  else await transcribe(new Float32Array(SR));
   stage('chạy thử');
-  post({ type: 'ready', device: device + (device === 'webgpu' ? (f16 ? ' fp16' : ' q4') : ''), model: size, loadMs: Math.round(performance.now() - t0) });
+  post({ type: 'ready', device: device + (device === 'webgpu' ? (f16 ? ' fp16' : ' q4') : ''), model: size, mode, loadMs: Math.round(performance.now() - t0) });
+  if (mode === 'hybrid') loadPho(progress_callback, device); // nền: chỉ cần khi Google nghe sai tiếng ở 1 câu tiếng Việt
+}
+
+// PhoWhisper-tiny (VinAI, chuyên tiếng Việt), bản nén q8 chạy CPU, ~41 MB. Đo giọng Việt thật: khớp chữ 85–91% (có thể cao
+// hơn thực tế vì bộ đo VLSP2020 nằm trong dữ liệu huấn luyện của nó) — so với Whisper tiny đa ngữ ~50%.
+// Có WebGPU: bản fp32 (~150 MB) chạy GPU — đo máy tính 2,8–3,0 s/câu 7 s so với CPU q8 3,5–5,6 s.
+async function loadPho(progress_callback, device) {
+  try {
+    const id = 'huuquyet/PhoWhisper-tiny';
+    const gpu = device === 'webgpu';
+    const [p, t, m] = await Promise.all([
+      T.AutoProcessor.from_pretrained(id, { progress_callback }),
+      T.AutoTokenizer.from_pretrained(id, { progress_callback }),
+      T.WhisperForConditionalGeneration.from_pretrained(id, gpu
+        ? { dtype: { encoder_model: 'fp32', decoder_model_merged: 'fp32' }, device: 'webgpu', progress_callback }
+        : { dtype: 'q8', device: 'wasm', progress_callback }),
+    ]);
+    pho = { processor: p, tokenizer: t, model: m };
+    post({ type: 'stage', name: 'PhoWhisper (dự phòng tiếng Việt)', ms: 0 });
+  } catch (e) {
+    post({ type: 'error', message: 'nạp PhoWhisper lỗi: ' + (e && e.message) });
+  }
+}
+
+// Dò ngôn ngữ: Việt hay tiếng đối tác (encoder + 1 bước decoder từ <|startoftranscript|>).
+async function lid(audio) {
+  const { input_features } = await processor(audio);
+  const dec = new T.Tensor('int64', BigInt64Array.from([BigInt(tokId('<|startoftranscript|>'))]), [1, 1]);
+  const o = await model({ input_features, decoder_input_ids: dec });
+  const V = o.logits.dims.at(-1);
+  const last = o.logits.data.slice(o.logits.data.length - V);
+  const cands = ['vi', partner];
+  const lg = cands.map((c) => last[tokId(`<|${c}|>`)]);
+  const mx = Math.max(...lg);
+  const ex = lg.map((v) => Math.exp(v - mx));
+  const k = ex[0] >= ex[1] ? 0 : 1;
+  return { lang: cands[k], prob: ex[k] / (ex[0] + ex[1]) };
+}
+
+// Chép 1 câu với ngôn ngữ đã biết (dự phòng khi Google nghe sai tiếng).
+async function transcribeAs(audio, lang) {
+  const use = lang === 'vi' && pho ? pho : { processor, tokenizer, model };
+  const tid = (t) => use.tokenizer.model.tokens_to_ids.get(t);
+  const { input_features } = await use.processor(audio);
+  const init = [tid('<|startoftranscript|>'), tid(`<|${lang}|>`), tid('<|transcribe|>'), tid('<|notimestamps|>')];
+  const maxTok = Math.round((15 * audio.length) / SR) + 12;
+  const seq = await use.model.generate({ inputs: input_features, decoder_input_ids: init, max_new_tokens: maxTok, no_repeat_ngram_size: 4 });
+  const ids = Array.from(seq.tolist()[0]).slice(init.length);
+  return { text: use.tokenizer.decode(ids, { skip_special_tokens: true }).trim(), model: use === pho ? 'PhoWhisper' : 'Whisper' };
 }
 
 const tokId = (t) => tokenizer.model.tokens_to_ids.get(t);
@@ -128,6 +192,7 @@ function deliver(r, s, t0) {
 
 async function finishSentence(done) {
   const s = { audio: done.audio, at: performance.now() };
+  if (mode === 'hybrid') return finishSegment(done, s);
   try {
     if (spec && spec.id === done.id && spec.version === done.version) {
       const sp = spec;
@@ -144,6 +209,34 @@ async function finishSentence(done) {
   }
 }
 
+// hybrid: hết câu → dò ngôn ngữ (dùng kết quả dò sớm nếu khớp) → gửi 'segment'; giữ audio để chép lại nếu cần
+async function finishSegment(done, s) {
+  kept.set(done.id, done.audio);
+  if (kept.size > 8) kept.delete(kept.keys().next().value);
+  const audioMs = Math.round((done.audio.length / SR) * 1000);
+  try {
+    let r, t0;
+    if (spec && spec.id === done.id && spec.version === done.version) {
+      r = await spec.p;
+      t0 = spec.t0;
+    } else {
+      t0 = performance.now();
+      r = await runJob(() => lid(done.audio));
+    }
+    spec = null;
+    const endAt = performance.timeOrigin + s.at;
+    post({ type: 'segment', id: done.id, lang: r.lang, prob: +r.prob.toFixed(3), audioMs, startAt: endAt - audioMs - seg.endSilence(), endAt, lidMs: Math.round(performance.now() - t0), duringTts: Boolean(done.duringTts) });
+  } catch (e) {
+    post({ type: 'error', message: 'dò ngôn ngữ lỗi: ' + (e && e.message) });
+  }
+}
+
+function runJob(fn) {
+  const p = gpu.then(fn);
+  gpu = p.catch(() => {});
+  return p;
+}
+
 async function runVad() {
   if (vadBusy) return;
   vadBusy = true;
@@ -158,15 +251,22 @@ async function runVad() {
       post({ type: 'error', message: 'VAD lỗi: ' + (e && e.message) });
     }
     if (muted) continue; // đang đọc bản dịch: không nghe (tránh dịch lại tiếng của chính app)
+    const wasActive = seg.active();
     const done = seg.push(fr, prob);
+    if (!wasActive && seg.active()) segTts = tts; // câu mới bắt đầu
+    if (tts && seg.active()) segTts = true; // chỉ câu thật sự nói trong lúc app đọc
     const sp = seg.speaking();
     if (sp !== lastSpeaking) post({ type: 'speaking', on: (lastSpeaking = sp) });
-    if (done) finishSentence(done);
+    if (done) {
+      done.duringTts = segTts;
+      segTts = false;
+      finishSentence(done);
+    }
     else {
       const pk = seg.peek(SPEC_MS);
       if (pk && !(spec && spec.id === pk.id && spec.version === pk.version)) {
         spec = { id: pk.id, version: pk.version, t0: performance.now() };
-        spec.p = runWhisper(pk.audio);
+        spec.p = mode === 'hybrid' ? runJob(() => lid(pk.audio)) : runWhisper(pk.audio);
         spec.p.catch(() => {});
       }
     }
@@ -185,6 +285,7 @@ self.onmessage = async (e) => {
     } else if (m.type === 'config') {
       if (m.partner) partner = W[m.partner] || m.partner;
       if (m.endSilenceMs) seg.setEndSilence(m.endSilenceMs);
+      if (m.tts !== undefined) tts = m.tts;
       if (m.muted !== undefined) {
         muted = m.muted;
         if (muted) {
@@ -192,6 +293,13 @@ self.onmessage = async (e) => {
           if (lastSpeaking) post({ type: 'speaking', on: (lastSpeaking = false) });
         }
       }
+    } else if (m.type === 'transcribe') {
+      const audio = kept.get(m.id);
+      if (!audio) return post({ type: 'fallback', id: m.id, lang: m.lang, text: '', ms: 0, model: 'mất audio' });
+      const t0 = performance.now();
+      const lang = W[m.lang] || m.lang;
+      const r = await runJob(() => transcribeAs(audio, lang));
+      post({ type: 'fallback', id: m.id, lang, text: r.text, model: r.model, ms: Math.round(performance.now() - t0) });
     } else if (m.type === 'flush') {
       const done = seg.flush();
       if (done) finishSentence(done);
