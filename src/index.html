@@ -40,10 +40,10 @@
       </select>
       <span class="label">Cách nghe</span>
       <select id="listenMode">
-        <option value="auto" selected>Tự nhận người nói — nghe cả hai, hết câu là dịch</option>
-        <option value="chrome">Chrome luân phiên (cách cũ)</option>
+        <option value="chrome" selected>Chrome luân phiên — chữ chính xác nhất</option>
+        <option value="auto">Tự nhận người nói (thử nghiệm — chữ tiếng Việt còn kém)</option>
       </select>
-      <div id="endSilBox">
+      <div id="endSilBox" hidden>
         <span class="label">Thời gian chờ nhận biết hết câu</span>
         <select id="endSilMs">
           <option value="500">0,5 giây — nhanh nhất</option>
@@ -54,7 +54,7 @@
         </select>
         <p class="sub" style="margin:4px 0 0">Lần đầu bấm Bắt đầu, app tải bộ nhận diện giọng nói chạy ngay trên điện thoại (40–95 MB tuỳ máy, nên dùng Wi-Fi). Các lần sau dùng lại, không tải nữa.</p>
       </div>
-      <div id="holdBox" hidden>
+      <div id="holdBox">
         <span class="label">Kết thúc lượt nói khi im lặng</span>
         <select id="holdMs">
           <option value="1000">1 giây</option>
@@ -76,7 +76,7 @@
         <option value="1.2" selected>Nhanh</option>
         <option value="1.4">Rất nhanh</option>
       </select>
-      <p class="sub" style="margin:0">Cả hai người cứ nói tự nhiên, không cần bấm gì. Mỗi câu nói xong, app tự nhận là tiếng Việt hay tiếng của đối tác, dịch và đọc ngay vào tai nghe.</p>
+      <p class="sub" style="margin:0">Chrome luân phiên: người đang nói cứ nói hết ý, im lặng thì app đọc bản dịch và chuyển sang người kia. Tự nhận người nói: không cần lượt, nhưng chữ tiếng Việt chưa chính xác (đang cải tiến).</p>
     </div>
 
     <div class="panel">
@@ -144,6 +144,9 @@
         <option value="ko-KR">Tiếng Hàn</option>
       </select>
       <button class="primary big" id="stStart">Bắt đầu tự kiểm tra</button>
+      <span class="label">Thử nghe song song (khoảng 30 giây)</span>
+      <p class="sub" style="margin:0">Kiểm tra máy này có cho app và bộ nghe của Google cùng dùng micro không. Nếu có, app sẽ dùng Google để ra chữ (chính xác nhất) và tự nhận ai đang nói. Đọc to 1 câu mẫu 2 lần.</p>
+      <button class="primary big" id="stConc">Thử nghe song song</button>
       <span class="label">Đo tai nghe &amp; độ trễ (khoảng 5 phút)</span>
       <p class="sub" style="margin:0">Đeo tai nghe Bluetooth như khi audit. App phát tiếng bíp, anh chạm nút khi nghe thấy và trả lời nghe ở tai nào. App đo: tai trái/phải có tách được không, tai nghe mất bao lâu mới phát được tiếng sau khi micro tắt, và từ lúc dứt lời tới lúc nghe bản dịch mất bao lâu ở từng bước. Làm xong, tắt Bluetooth và đo lại bằng loa điện thoại để so sánh.</p>
       <button class="big" id="stField">Đo tai nghe &amp; độ trễ</button>

@@ -33,7 +33,9 @@ const SPEECHEND_GRACE_MS = 350;
 const HOLD_KEY = 'audit.holdMs';
 const PROBE_KEY = 'audit.parallel.v1';
 const RATE_KEY = 'audit.ttsRate';
-const LISTEN_KEY = 'audit.listenMode'; // 'auto' (Tự nhận người nói, Whisper trên máy) | 'chrome' (luân phiên cũ)
+// 'chrome' (luân phiên, mặc định) | 'auto' (Tự nhận người nói, Whisper trên máy — thử nghiệm: đo giọng người thật 10/10/2026,
+// Whisper tiny chỉ khớp ~50% chữ tiếng Việt so với Google 93% → bản dịch loạn). Khoá v2: ai đã lưu 'auto' từ bản .2 quay về mặc định.
+const LISTEN_KEY = 'audit.listenMode.v2';
 const ENDSIL_KEY = 'audit.endSilMs';
 const WHO = { me: 'Tôi', partner: 'Đối tác' };
 // localStorage có thể bị chặn (chế độ ẩn danh...): lỗi thì coi như không có

@@ -5,6 +5,7 @@ import { initDialogue } from './dialogue.js';
 import { initMeeting } from './meeting.js';
 import { initSelfTest } from './selftest.js';
 import { initFieldTest } from './fieldtest.js';
+import { initConcurrentTest } from './concurrent.js';
 import { isInAppBrowser } from './env.js';
 import { APP_VERSION } from './config.js';
 
@@ -34,6 +35,7 @@ window.__dialogue = initDialogue();
 initMeeting();
 initSelfTest();
 initFieldTest();
+initConcurrentTest();
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
