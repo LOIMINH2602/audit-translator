@@ -74,6 +74,8 @@ npm test         # test logic
 node tools/e2e/run.mjs ja-JP            # test đầu-cuối chế độ song song (Chrome desktop)
 node tools/e2e/run.mjs ja-JP android    # giả lập máy chỉ cho 1 recognizer → chế độ luân phiên
 node tools/e2e/tune.mjs [grid]          # chấm pickSpeaker trên 122 ca nhận diện đo thật
+node tools/e2e/auto.mjs ko-KR tiny webgpu   # Tự nhận người nói (Whisper trên máy): bộ nghe; DLG=1 = cả màn 1:1; NOISE=0.05
+node tools/whisper/bench.mjs tiny,base webgpu  # đo Whisper: nhận đúng người nói, khớp chữ, tốc độ (DEC=fp16|q4, PROMPT=1)
 node tools/e2e/field.mjs [android]      # test bài "Đo tai nghe & độ trễ" với người dùng giả (4 kịch bản tai nghe)
 ```
 

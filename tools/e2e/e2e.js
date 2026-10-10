@@ -12,6 +12,8 @@
   window.__androidLike = cfg.android;
   const $ = (id) => document.getElementById(id);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // bài này test cách nghe cũ (Chrome luân phiên/song song); Tự nhận người nói có bài riêng (auto.mjs)
+  $('listenMode').value = 'chrome'; $('listenMode').onchange();
   $('partnerLang').value = cfg.partner; $('partnerLang').onchange();
   $('dlgToggle').click();
   for (let i = 0; i < 60 && !__dialogue.state().running; i++) await sleep(100);

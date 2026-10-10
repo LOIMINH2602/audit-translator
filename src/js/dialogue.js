@@ -22,6 +22,7 @@ import { parseGlossary, applyGlossary } from './glossary.js';
 import { speak, canSpeak, warmUp, getMode, setMode, resetAuto, cancel as cancelSpeech } from './tts.js';
 import { diag } from './diagnostics.js';
 import { holdScreen, classifyMicError } from './keepalive.js';
+import { createAutoTalk } from './autotalk.js';
 
 // Mở lại mic ngay khi đọc xong (không chờ dư âm): đuôi bản dịch lọt vào mic thì isEcho lọc trong ECHO_WINDOW_MS.
 const ECHO_WINDOW_MS = 3000;
@@ -32,6 +33,8 @@ const SPEECHEND_GRACE_MS = 350;
 const HOLD_KEY = 'audit.holdMs';
 const PROBE_KEY = 'audit.parallel.v1';
 const RATE_KEY = 'audit.ttsRate';
+const LISTEN_KEY = 'audit.listenMode'; // 'auto' (Tự nhận người nói, Whisper trên máy) | 'chrome' (luân phiên cũ)
+const ENDSIL_KEY = 'audit.endSilMs';
 const WHO = { me: 'Tôi', partner: 'Đối tác' };
 // localStorage có thể bị chặn (chế độ ẩn danh...): lỗi thì coi như không có
 const readPref = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
@@ -40,6 +43,16 @@ const other = (side) => (side === 'partner' ? 'me' : 'partner');
 
 export function initDialogue() {
   const log = [];
+  let usingAuto = false; // đang chạy chế độ Tự nhận người nói
+  const auto = createAutoTalk({
+    log,
+    partnerLang: () => $('partnerLang').value,
+    endSilenceMs: () => Number($('endSilMs').value) || 800,
+    status: (t) => { $('dlgStatus').textContent = t; },
+    // test tự động ép mô hình/cách chạy (đọc lúc bấm Bắt đầu); người dùng: tự chọn theo máy
+    get model() { return window.__autoModel; },
+    get device() { return window.__autoDevice; },
+  });
   let running = false;
   let busy = false; // đang dịch/đọc 1 câu: bỏ qua mọi kết quả nhận diện
   let mode = null; // 'parallel' | 'turn'
@@ -108,7 +121,7 @@ export function initDialogue() {
   // Trang ẩn (tắt màn hình, chuyển app): Android ngừng micro → tạm dừng. Hiện lại → nghe tiếp, giữ nguyên lượt và
   // các đoạn đã dịch chưa đọc.
   document.addEventListener('visibilitychange', () => {
-    if (!running) return;
+    if (!running || usingAuto) return; // Tự nhận người nói: micro getUserMedia không bị Chrome cắt như nhận diện
     if (document.visibilityState !== 'visible') {
       clearTimeout(holdTimer);
       clearTimeout(speechEndTimer);
@@ -470,6 +483,11 @@ export function initDialogue() {
   function showStatus(text) {
     $('dlgDot').className = 'dot' + (running ? ' live' : '');
     const turnBtn = $('dlgTurn');
+    if (usingAuto) {
+      turnBtn.hidden = true; // không còn lượt
+      if (text) $('dlgStatus').textContent = text;
+      return;
+    }
     turnBtn.hidden = !(running && mode === 'turn');
     if (!running) {
       $('dlgStatus').textContent = 'Đang tắt';
@@ -504,6 +522,20 @@ export function initDialogue() {
     $('dlgToggle').disabled = true;
     $('dlgStatus').textContent = 'Đang kiểm tra micro…';
     try {
+      if ($('listenMode').value === 'auto') {
+        await warmUp(partnerLang());
+        try {
+          await auto.start();
+        } catch (_) {
+          return; // autotalk đã báo lỗi
+        }
+        usingAuto = true;
+        running = true;
+        holdScreen('dlg', true);
+        $('dlgToggle').textContent = 'Dừng nghe';
+        showStatus();
+        return;
+      }
       if (!probe) {
         // Máy đã dò ra "không song song" thì nhớ luôn (localStorage), không mất ~2 giây dò lại mỗi lần bấm Bắt đầu.
         if (readPref(PROBE_KEY) === 'no') {
@@ -540,6 +572,12 @@ export function initDialogue() {
   function stop() {
     running = false;
     holdScreen('dlg', false);
+    if (usingAuto) {
+      usingAuto = false;
+      auto.stop();
+      $('dlgToggle').textContent = 'Bắt đầu nghe';
+      return showStatus();
+    }
     clearTimeout(holdTimer);
     clearTimeout(resumeTimer);
     floor = [];
@@ -555,6 +593,7 @@ export function initDialogue() {
 
   $('partnerLang').onchange = () => {
     if (!running) warmUp(partnerLang());
+    if (usingAuto) return auto.config({ partner: partnerLang() });
     if (mode === 'parallel') recs.partner.setLang(partnerLang());
     else if (mode === 'turn' && running && !busy) {
       pauseAll();
@@ -574,7 +613,7 @@ export function initDialogue() {
   };
 
   $('dlgToggle').onclick = () => {
-    if (!supported) return setError($('dlgErr'), 'Trình duyệt không hỗ trợ nhận diện giọng nói. Dùng Google Chrome.');
+    if (!supported && $('listenMode').value !== 'auto') return setError($('dlgErr'), 'Trình duyệt không hỗ trợ nhận diện giọng nói. Dùng Google Chrome.');
     if (running) stop();
     else start();
   };
@@ -588,11 +627,29 @@ export function initDialogue() {
     setMode(m);
     diag('Giọng đọc: ' + m);
   };
+  // Cách nghe: Tự nhận người nói (mặc định) hoặc Chrome luân phiên; mỗi cách có ô thời gian chờ riêng
+  const showListenMode = () => {
+    const a = $('listenMode').value === 'auto';
+    $('endSilBox').hidden = !a;
+    $('holdBox').hidden = a;
+  };
+  if (readPref(LISTEN_KEY)) $('listenMode').value = readPref(LISTEN_KEY);
+  showListenMode();
+  $('listenMode').onchange = () => {
+    writePref(LISTEN_KEY, $('listenMode').value);
+    showListenMode();
+    if (running) stop(); // đổi cách nghe: bấm Bắt đầu lại
+  };
+  if (readPref(ENDSIL_KEY)) $('endSilMs').value = readPref(ENDSIL_KEY);
+  $('endSilMs').onchange = () => {
+    writePref(ENDSIL_KEY, $('endSilMs').value);
+    auto.config({ endSilenceMs: Number($('endSilMs').value) });
+  };
   if (readPref(HOLD_KEY)) $('holdMs').value = readPref(HOLD_KEY);
   $('holdMs').onchange = () => writePref(HOLD_KEY, $('holdMs').value);
   if (readPref(RATE_KEY)) $('ttsRate').value = readPref(RATE_KEY);
   $('ttsRate').onchange = () => writePref(RATE_KEY, $('ttsRate').value);
 
   // cho bảng Tự kiểm tra / test tự động đọc trạng thái
-  return { state: () => ({ running, mode, turn, busy, log, switches, floor: floor.length }) };
+  return { state: () => ({ running, mode: usingAuto ? 'auto' : mode, turn, busy, log, switches, floor: floor.length, auto: auto.state() }) };
 }

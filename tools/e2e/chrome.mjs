@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const root = join(here, '..', '..');
 const CHROME = process.env.CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const PORT = 8089;
+const PORT = Number(process.env.E2E_PORT) || 8089; // chạy 2 bài test cùng lúc: đặt E2E_PORT khác
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // samples = { id: [tl, text] } → { id: base64 mp3 } (mọi file trong thư mục audio).

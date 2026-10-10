@@ -38,14 +38,32 @@
         <option value="ja-JP">Tiếng Nhật</option>
         <option value="ko-KR">Tiếng Hàn</option>
       </select>
-      <span class="label">Kết thúc lượt nói khi im lặng</span>
-      <select id="holdMs">
-        <option value="1000">1 giây</option>
-        <option value="1500">1,5 giây</option>
-        <option value="2000" selected>2 giây</option>
-        <option value="3000">3 giây — người nói hay ngừng để nghĩ</option>
-        <option value="4000">4 giây</option>
+      <span class="label">Cách nghe</span>
+      <select id="listenMode">
+        <option value="auto" selected>Tự nhận người nói — nghe cả hai, hết câu là dịch</option>
+        <option value="chrome">Chrome luân phiên (cách cũ)</option>
       </select>
+      <div id="endSilBox">
+        <span class="label">Thời gian chờ nhận biết hết câu</span>
+        <select id="endSilMs">
+          <option value="500">0,5 giây — nhanh nhất</option>
+          <option value="800" selected>0,8 giây</option>
+          <option value="1200">1,2 giây</option>
+          <option value="1800">1,8 giây — người nói hay ngừng để nghĩ</option>
+          <option value="2500">2,5 giây</option>
+        </select>
+        <p class="sub" style="margin:4px 0 0">Lần đầu bấm Bắt đầu, app tải bộ nhận diện giọng nói chạy ngay trên điện thoại (40–95 MB tuỳ máy, nên dùng Wi-Fi). Các lần sau dùng lại, không tải nữa.</p>
+      </div>
+      <div id="holdBox" hidden>
+        <span class="label">Kết thúc lượt nói khi im lặng</span>
+        <select id="holdMs">
+          <option value="1000">1 giây</option>
+          <option value="1500">1,5 giây</option>
+          <option value="2000" selected>2 giây</option>
+          <option value="3000">3 giây — người nói hay ngừng để nghĩ</option>
+          <option value="4000">4 giây</option>
+        </select>
+      </div>
       <span class="label">Giọng đọc bản dịch</span>
       <select id="ttsEngine">
         <option value="auto">Tự động — giọng máy chậm thì dùng giọng Google</option>
@@ -58,7 +76,7 @@
         <option value="1.2" selected>Nhanh</option>
         <option value="1.4">Rất nhanh</option>
       </select>
-      <p class="sub" style="margin:0">App tự nhận ai đang nói và dịch sang tiếng còn lại. Nếu máy chỉ cho nghe 1 tiếng mỗi lúc, app nghe luân phiên: người đang nói cứ nói hết ý (ngừng giữa chừng vẫn được), im lặng hẳn thì app đọc bản dịch và chuyển sang người kia.</p>
+      <p class="sub" style="margin:0">Cả hai người cứ nói tự nhiên, không cần bấm gì. Mỗi câu nói xong, app tự nhận là tiếng Việt hay tiếng của đối tác, dịch và đọc ngay vào tai nghe.</p>
     </div>
 
     <div class="panel">

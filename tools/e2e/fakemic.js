@@ -4,6 +4,7 @@
   const ctx = new AudioContext();
   const dest = ctx.createMediaStreamDestination();
   const track = dest.stream.getAudioTracks()[0];
+  window.__fakeTrack = track; // chế độ Tự nhận người nói lấy micro qua getUserMedia (tools/e2e/auto.mjs)
   // micro thật luôn có dữ liệu: phát im lặng liên tục (nhiễu rất nhỏ) để track không bao giờ 'đứng'
   const hiss = ctx.createConstantSource(); hiss.offset.value = 0.0001; hiss.connect(dest); hiss.start();
   // __noise > 0: tiếng ồn nền liên tục (nhà xưởng, quạt, người xung quanh) trộn vào micro — micro giả im tuyệt đối thì
