@@ -82,3 +82,9 @@ button.turn{width:100%;padding:14px 12px;border-radius:10px;font:inherit;font-we
 button.turn.partner{border-color:var(--warn);background:var(--warn-bg);color:var(--warn)}
 button.turn.wait{border-style:dashed;opacity:.7}
 button.turn[hidden]{display:none}
+/* Hội trường: phụ đề chữ đang nghe + bản dịch tạm */
+.live-sub{background:var(--soft);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}
+.live-src{font-size:13px;color:var(--muted)}
+.live-out{font-size:16px;color:var(--ink);font-weight:500}
+label.chk select{font:inherit;max-width:100%}
+label.chk:has(select){flex-wrap:wrap}
