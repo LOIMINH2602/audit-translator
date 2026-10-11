@@ -3,6 +3,10 @@
 // GAP ms, phát vào micro giả; nhận diện là Google thật của Chrome, dịch thật, đọc thật. ANDROID=1 (mặc định) giả lập Chrome
 // Android (1 phiên giữ micro, khởi động phiên ~0,6s, final đến muộn 1,5s).
 //   node tools/e2e/meeting.mjs [N=12]   GAP=250 DURING=listen|pause BASE_URL=… (test bản đang live)
+//   ENGINE=mic|chrome (cách nghe; mic = micro liên tục + Whisper), MODEL=base|tiny, ECHO=1: mỗi lần app đọc bản dịch thì phát
+//   1 câu tiếng Việt giọng thật vào micro (giả lập giọng đọc lọt lại micro) — app phải bỏ, không dịch thành rác.
+//   Cách nghe mic: micro giả lập danh sách thiết bị của Chrome Android có tai nghe Bluetooth; kiểm app chọn đúng micro điện
+//   thoại và tắt xử lý âm thanh (điều kiện để tai nghe giữ chế độ nghe nhạc, theo mã nguồn Chromium).
 // Chấm: nghe được = khớp chữ (chuỗi nhận diện ghép lại so với chữ gốc); giữ nghĩa = bản dịch của app so với bản Google
 // dịch chữ gốc (cùng máy dịch → chỉ đo phần mất do nghe/cắt câu); độ trễ chốt câu, dịch, đọc.
 // KHÔNG đo được ở đây: tiếng loa/tai nghe lọt lại vào micro (micro giả không nghe tiếng app đọc), Bluetooth, máy thật.
@@ -14,16 +18,38 @@ import { similarity } from '../../src/js/scoring.js';
 const N = Number(process.argv[2] || 12);
 const GAP = Number(process.env.GAP || 250);
 const DURING = process.env.DURING || 'listen';
-const ANDROID = process.env.ANDROID !== '0';
+const ENGINE = process.env.ENGINE || 'mic';
+const MODEL = process.env.MODEL || 'auto';
+const ECHO = Boolean(process.env.ECHO);
+const ANDROID = ENGINE === 'chrome' && process.env.ANDROID !== '0';
 const dir = new URL('../whisper/real/', import.meta.url);
 const items = JSON.parse(readFileSync(new URL('index.json', dir), 'utf8')).filter((x) => x.lang === 'ko').slice(0, N);
-const clips = Object.fromEntries(items.map((x) => [x.file.replace(/\.\w+$/, ''), readFileSync(new URL(x.file, dir)).toString('base64')]));
+const all = JSON.parse(readFileSync(new URL('index.json', dir), 'utf8'));
+const echoes = all.filter((x) => x.lang === 'vi').slice(0, 8);
+const clips = Object.fromEntries([...items, ...(ECHO ? echoes : [])].map((x) => [x.file.replace(/\.\w+$/, ''), readFileSync(new URL(x.file, dir)).toString('base64')]));
 const seq = items.flatMap((x, i) => (i ? [GAP, x.file.replace(/\.\w+$/, '')] : [x.file.replace(/\.\w+$/, '')]));
 
 const page = `window.__CLIPS=${JSON.stringify(clips)};\n` + readTool('fakemic.js') + `
 (async () => {
   await window.__ready;
   window.__androidLike = ${ANDROID};
+  // Chrome Android có tai nghe Bluetooth: danh sách micro và ghi lại yêu cầu mở micro của app
+  window.__gum = [];
+  navigator.mediaDevices.enumerateDevices = async () => [
+    { kind: 'audioinput', deviceId: 'default', label: 'Default' }, { kind: 'audioinput', deviceId: 'bt', label: 'Bluetooth headset' },
+    { kind: 'audioinput', deviceId: 'spk', label: 'Speakerphone' }, { kind: 'audioinput', deviceId: 'ear', label: 'Headset earpiece' }];
+  navigator.mediaDevices.getUserMedia = async (c) => { window.__gum.push(c); return new MediaStream([window.__fakeTrack.clone()]); };
+  const echoIds = ${JSON.stringify(echoes.map((x) => x.file.replace(/\.\w+$/, '')))};
+  let ei = 0;
+  window.__echoes = 0;
+  const echo = () => { if (${ECHO}) { window.__echo(echoIds[ei++ % echoIds.length], ${Number(process.env.ECHO) || 0.35}); window.__echoes++; } };
+  const sp = speechSynthesis.speak.bind(speechSynthesis);
+  speechSynthesis.speak = (u) => { echo(); return sp(u); };
+  const play = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function () { echo(); return play.call(this); };
+  document.getElementById('mtgEngine').value = ${JSON.stringify(ENGINE)};
+  if (${JSON.stringify(process.env.DEVICE || '')}) localStorage.setItem('audit.mtgDevice.v1', ${JSON.stringify(process.env.DEVICE || '')});
+  document.getElementById('mtgModel').value = ${JSON.stringify(MODEL)};
   const $ = (id) => document.getElementById(id);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   document.getElementById('tabMeeting').click();
@@ -31,7 +57,9 @@ const page = `window.__CLIPS=${JSON.stringify(clips)};\n` + readTool('fakemic.js
   if ($('mtgDuring')) { $('mtgDuring').value = ${JSON.stringify(DURING)}; $('mtgDuring').onchange(); }
   $('mtgSpeak').checked = true;
   $('mtgToggle').click();
-  await sleep(2500);
+  // micro liên tục: chờ nạp Whisper xong (lần đầu tải mô hình)
+  for (let i = 0; i < 600 && !/Đang nghe/.test($('mtgStatus').textContent); i++) await sleep(500);
+  await sleep(1500);
   const t0 = performance.now();
   const total = await __say(${JSON.stringify(seq)});
   // cập nhật trạng thái mỗi 500ms: có đứng im không
@@ -42,7 +70,8 @@ const page = `window.__CLIPS=${JSON.stringify(clips)};\n` + readTool('fakemic.js
   clearInterval(iv);
   const entries = [...document.querySelectorAll('#mtgLog .entry')].reverse().map((e) => ({ src: e.querySelector('.o').textContent, out: e.querySelector('.t').textContent }));
   return { version: $('appVersion').textContent, total: Math.round(total), entries, timeline,
-    stats: window.__meeting ? window.__meeting.stats : null, stuck: window.__stuckCount || 0 };
+    stats: window.__meeting ? window.__meeting.stats : null, stuck: window.__stuckCount || 0, gum: window.__gum, echoes: window.__echoes,
+    status: $('mtgStatus').textContent, diag: $('diagLog').textContent };
 })()`;
 
 const ref = items.map((x) => x.text).join(' ');
@@ -53,10 +82,11 @@ async function gtrans(q) {
 const refVi = (await Promise.all(items.map((x) => gtrans(x.text)))).join(' ');
 const errors = [];
 const r = await runInChrome(page, { errors, timeoutMs: 600000 });
+if (!r.entries) { console.log("KẾT QUẢ LẠ:", JSON.stringify(r).slice(0, 1500)); process.exit(1); }
 const heard = r.entries.map((e) => e.src).join(' ');
 const outVi = r.entries.map((e) => e.out).join(' ');
 const pct = (x) => Math.round(x * 100) + '%';
-console.log(`${r.version} · ${ANDROID ? 'giả lập Android' : 'Chrome máy tính'} · khi đọc: ${DURING} · podcast ${items.length} câu, ${(r.total / 1000).toFixed(1)}s, ngừng ${GAP}ms`);
+console.log(`${r.version} · cách nghe ${ENGINE}${ENGINE === 'mic' ? ' whisper-' + MODEL : ''} · ${ANDROID ? 'giả lập Android' : 'Chrome máy tính'} · khi đọc: ${DURING} · podcast ${items.length} câu, ${(r.total / 1000).toFixed(1)}s, ngừng ${GAP}ms`);
 console.log(`  số câu app dịch: ${r.entries.length} · nghe được (khớp chữ): ${pct(similarity(ref, heard))} · giữ nghĩa (so bản dịch chuẩn): ${pct(similarity(refVi, outVi))}`);
 // đứng im: khoảng dài nhất trong lúc đang phát podcast mà không có câu dịch mới
 let last = 0, maxGap = 0, prevN = 0;
@@ -70,7 +100,17 @@ if (r.stats) {
   console.log(`  dịch xong sau khi chốt câu TB ${avg(s.lines.map((x) => x.shownAt - x.heardAt))}ms · lượt đọc: ${s.reads.length}, bỏ đọc ${s.skipped || 0} câu cũ (${during} lượt đọc trong lúc podcast còn chạy) · bắt đầu đọc sau khi chốt câu TB ${avg(s.reads.map((x) => x.lagMs))}ms, lâu nhất ${Math.max(0, ...s.reads.map((x) => x.lagMs))}ms`);
   console.log(`  cách chốt câu: ${Object.entries(s.lines.reduce((m, x) => ((m[x.why] = (m[x.why] || 0) + 1), m), {})).map(([k, v]) => k + ' ' + v).join(', ')}`);
 }
+if (process.env.DIAG) console.log(r.diag.split('\n').filter((l) => /Whisper|bỏ|chốt/.test(l)).join('\n'));
 if (process.env.SHOW) r.entries.forEach((e, i) => console.log(`  ${i + 1}. ${e.src}\n     → ${e.out}`));
 const lv = r.timeline.filter((p) => p.t < r.total);
 console.log(`  phụ đề chạy: hiện ${pct(lv.filter((p) => p.live).length / (lv.length || 1))} thời gian podcast · có bản dịch tạm ${pct(lv.filter((p) => p.live && p.out).length / (lv.length || 1))}`);
+if (ENGINE === 'mic') {
+  const g = r.gum.at(-1)?.audio || {};
+  const id = g.deviceId && g.deviceId.exact;
+  const fx = ['echoCancellation', 'noiseSuppression', 'autoGainControl'].filter((k) => g[k] !== false);
+  console.log(`  micro: ${id === 'ear' ? 'ĐÚNG micro điện thoại (Headset earpiece)' : 'SAI: ' + JSON.stringify(g)} · xử lý âm thanh: ${fx.length ? 'CÒN BẬT ' + fx : 'tắt hết (đúng)'} · số lần mở micro: ${r.gum.length}`);
+  const a = r.stats.asr;
+  if (a.length) console.log(`  Whisper: ${a.length} câu, xử lý TB ${Math.round(a.reduce((s, x) => s + x.asrMs, 0) / a.length)}ms cho câu TB ${Math.round(a.reduce((s, x) => s + x.audioMs, 0) / a.length)}ms (máy tính; điện thoại chậm hơn)`);
+  if (ECHO) console.log(`  giọng đọc lọt micro: phát ${r.echoes} lần · câu tiếng Việt lọt vào bản dịch: ${r.entries.filter((e) => /[ăâđêôơư]/i.test(e.src)).length}`);
+}
 console.log('  lỗi JS:', errors.length ? errors : 'không');

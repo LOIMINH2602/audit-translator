@@ -119,6 +119,22 @@
     <div class="panel">
       <button class="primary big" id="mtgToggle">Bắt đầu nghe</button>
       <div class="status"><span class="dot" id="mtgDot"></span><span id="mtgStatus">Đang tắt</span></div>
+      <label class="chk">Cách nghe:
+        <select id="mtgEngine">
+          <option value="mic">Micro liên tục — nghe qua tai nghe không ngắt quãng (khuyên dùng)</option>
+          <option value="chrome">Nhận diện của Chrome (cũ — tai nghe Bluetooth bị ngắt quãng)</option>
+        </select>
+      </label>
+      <label class="chk">Micro:
+        <select id="mtgMic"><option value="">Tự chọn micro điện thoại (khuyên dùng)</option></select>
+      </label>
+      <label class="chk">Bộ nhận diện:
+        <select id="mtgModel">
+          <option value="auto">Tự chọn theo máy (khuyên dùng)</option>
+          <option value="base">Chính xác (tải ~80–190 MB lần đầu)</option>
+          <option value="tiny">Nhanh, kém chính xác hơn (máy yếu)</option>
+        </select>
+      </label>
       <label class="chk"><input type="checkbox" id="mtgSpeak" checked> Đọc to bản dịch vào tai nghe</label>
       <label class="chk">Khi đang đọc bản dịch:
         <select id="mtgDuring">

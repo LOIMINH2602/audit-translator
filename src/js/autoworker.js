@@ -32,6 +32,8 @@ let lastSpeaking = false;
 let frames = []; // khung chờ VAD
 let vadBusy = false;
 let mode = 'full';
+let early = true; // nhận diện sớm (peek); máy chạy CPU tắt đi: nói liền thì phần lớn bị bỏ, phí sức xử lý
+let keepPartner = false; // Hội trường: chỉ nghe tiếng đối tác (xem keepPartnerText)
 // hybrid: app đang đọc bản dịch. Không tắt nghe (người nói có thể nói tiếp trong lúc app đọc) — chỉ đánh dấu câu nào có lúc
 // trùng giọng đọc; trang bỏ câu đó nếu Whisper nghe ra đúng tiếng app đang đọc (tiếng vọng), giữ nếu là tiếng khác.
 let tts = false;
@@ -190,6 +192,16 @@ function deliver(r, s, t0) {
   else post({ type: 'sentence', ...r, prob: +r.prob.toFixed(3), audioMs, asrMs, queuedMs: 0, early: Boolean(s.early), endAt: performance.timeOrigin + s.at });
 }
 
+// Hội trường (keepPartner): chỉ nghe tiếng đối tác; câu bị Whisper chọn là tiếng Việt = giọng đọc của app lọt vào micro.
+// Giọng đọc chồng lên người nói thì Whisper hay chọn "vi" cho cả câu → mất lời người nói (test 11/10: 84% → 48%). Nên chỉ
+// bỏ khi chắc chắn là tiếng Việt (≥ VI_SURE); không chắc thì chép lại câu đó theo tiếng đối tác.
+const VI_SURE = 0.95;
+async function keepPartnerText(r, audio) {
+  if (!keepPartner || r.lang !== 'vi' || r.prob >= VI_SURE) return r;
+  const t = await runJob(() => transcribeAs(audio, partner));
+  return { ...r, lang: partner, prob: 1 - r.prob, text: t.text, redo: true };
+}
+
 async function finishSentence(done) {
   const s = { audio: done.audio, at: performance.now() };
   if (mode === 'hybrid') return finishSegment(done, s);
@@ -198,12 +210,12 @@ async function finishSentence(done) {
       const sp = spec;
       spec = null;
       s.early = true;
-      deliver(await sp.p, s, sp.t0);
+      deliver(await keepPartnerText(await sp.p, done.audio), s, sp.t0);
       return;
     }
     spec = null;
     const t0 = performance.now();
-    deliver(await runWhisper(done.audio), s, t0);
+    deliver(await keepPartnerText(await runWhisper(done.audio), done.audio), s, t0);
   } catch (e) {
     post({ type: 'error', message: 'Whisper lỗi: ' + (e && e.message) });
   }
@@ -263,7 +275,7 @@ async function runVad() {
       finishSentence(done);
     }
     else {
-      const pk = seg.peek(SPEC_MS);
+      const pk = early ? seg.peek(SPEC_MS) : null;
       if (pk && !(spec && spec.id === pk.id && spec.version === pk.version)) {
         spec = { id: pk.id, version: pk.version, t0: performance.now() };
         spec.p = mode === 'hybrid' ? runJob(() => lid(pk.audio)) : runWhisper(pk.audio);
@@ -286,6 +298,8 @@ self.onmessage = async (e) => {
       if (m.partner) partner = W[m.partner] || m.partner;
       if (m.endSilenceMs) seg.setEndSilence(m.endSilenceMs);
       if (m.tts !== undefined) tts = m.tts;
+      if (m.keepPartner !== undefined) keepPartner = m.keepPartner;
+      if (m.early !== undefined) early = m.early;
       if (m.muted !== undefined) {
         muted = m.muted;
         if (muted) {

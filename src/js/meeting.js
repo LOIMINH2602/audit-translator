@@ -11,11 +11,16 @@ import { parseGlossary, applyGlossary } from './glossary.js';
 import { speak, cancel } from './tts.js';
 import { diag } from './diagnostics.js';
 import { holdScreen, classifyMicError } from './keepalive.js';
+import { createAutoListener, pickDevice } from './autolisten.js';
+import { openPhoneMic } from './phonemic.js';
 
 // nhớ theo máy: có đọc bản dịch không, khi đọc có nghe tiếp không, tiếng đang nghe
 const SPEAK_KEY = 'audit.mtgSpeak.v1';
 const DURING_KEY = 'audit.mtgDuring.v1';
 const LANG_KEY = 'audit.mtgLang.v1';
+const ENGINE_KEY = 'audit.mtgEngine.v1';
+const MIC_KEY = 'audit.mtgMic.v1';
+const MODEL_KEY = 'audit.mtgModel.v1';
 const ENGLISH_G = /\b(the|we|will|and|then|of|is|are|with|this|that|our|you|first|finally)\b/gi;
 const readPref = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
 const writePref = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
@@ -40,6 +45,12 @@ export function initMeeting() {
   $('mtgSpeak').onchange = () => writePref(SPEAK_KEY, $('mtgSpeak').checked ? '1' : '0');
   $('mtgDuring').onchange = () => writePref(DURING_KEY, $('mtgDuring').value);
   const pauseWhileSpeaking = () => $('mtgDuring').value === 'pause';
+  for (const [id, key] of [['mtgEngine', ENGINE_KEY], ['mtgModel', MODEL_KEY]]) {
+    if (readPref(key)) $(id).value = readPref(key);
+    $(id).onchange = () => { writePref(key, $(id).value); if (running) $('mtgToggle').click(); };
+  }
+  $('mtgMic').onchange = () => { writePref(MIC_KEY, $('mtgMic').value); if (running) $('mtgToggle').click(); };
+  const useMic = () => $('mtgEngine').value === 'mic';
 
   // Chữ của phiên nhận diện hiện tại đã chốt (committed) → chữ tạm sau đó chỉ lấy phần mới (delta).
   let committed = '';
@@ -117,7 +128,7 @@ export function initMeeting() {
 
   // Android ngừng micro khi trang ẩn (keepalive.js): hiện lại thì nghe tiếp
   document.addEventListener('visibilitychange', () => {
-    if (!running || document.visibilityState !== 'visible' || (speaking && pauseWhileSpeaking())) return;
+    if (!running || useMic() || document.visibilityState !== 'visible' || (speaking && pauseWhileSpeaking())) return;
     diag('Trang hiện lại → nghe lại (hội trường)');
     setError($('mtgErr'), 'App vừa bị ẩn (tắt màn hình hoặc chuyển app) nên Android ngừng micro. Đã nghe lại.');
     rec.start();
@@ -259,9 +270,12 @@ export function initMeeting() {
     const pause = pauseWhileSpeaking();
     if (pause) {
       // dùng loa ngoài: tạm ngừng nghe để micro không nghe lại giọng đọc; chữ đang nghe dở được chốt trước
-      if (interim) { const t = interim; committed = rawInterim; interim = ''; commit(t, 'trước khi đọc'); }
-      rec.pause();
-      resetInterim();
+      if (useMic()) L && L.config({ muted: true });
+      else {
+        if (interim) { const t = interim; committed = rawInterim; interim = ''; commit(t, 'trước khi đọc'); }
+        rec.pause();
+        resetInterim();
+      }
     }
     const t0 = Date.now();
     stats.reads.push({ n: items.length, startAt: t0 - startedAt, lagMs: t0 - items[0].heard, rate });
@@ -273,13 +287,14 @@ export function initMeeting() {
     }
     if (pause && running) {
       await new Promise((res) => setTimeout(res, 300));
-      rec.start();
+      if (useMic()) L && L.config({ muted: false });
+      else rec.start();
     }
     readNext();
   }
 
   // cho test tự động (tools/e2e/meeting.mjs) đọc
-  const stats = { lines: [], reads: [], skipped: 0 };
+  const stats = { lines: [], reads: [], skipped: 0, asr: [] };
   window.__meeting = { stats, state: () => ({ running, speaking, queued: sayQueue.length, interim }) };
 
   function setRunning(on) {
@@ -300,13 +315,117 @@ export function initMeeting() {
       writePref(LANG_KEY, currentLang);
       committed = '';
       resetInterim();
-      rec && rec.setLang(currentLang);
+      if (L) L.config({ partner: currentLang });
+      if (!useMic()) rec && rec.setLang(currentLang);
       if (running) setRunning(true);
     };
   });
 
+  // ---- cách nghe "Micro liên tục": micro điện thoại mở 1 lần suốt buổi (tai nghe giữ chế độ nghe nhạc), Whisper chạy
+  // trên máy nhận diện (đo 11/10, 21 câu Hàn giọng thật: base khớp chữ 88% thu sạch / 75% qua micro Bluetooth; tiny 81% / 64%)
+  let L = null;
+  let Lmodel = '';
+  let micInfo = null;
+  let hw = null; // { device, f16 } — chọn bộ nhận diện theo máy
+  function listener(model) {
+    if (L && Lmodel === model) return L;
+    Lmodel = model;
+    L = createAutoListener({
+      mode: 'full',
+      model,
+      device: hw.device,
+      partner: currentLang,
+      endSilenceMs: 450, // nói liền (podcast) cũng có quãng ngừng ngắn giữa các câu
+      agc: true,
+      getStream: async () => {
+        micInfo = await openPhoneMic(readPref(MIC_KEY) || '');
+        fillMics(micInfo);
+        diag(`Hội trường micro: "${micInfo.label}" (${micInfo.auto ? 'tự chọn micro điện thoại' : 'chọn tay'}, tắt xử lý âm thanh → tai nghe giữ chế độ nghe nhạc)`);
+        return micInfo.stream;
+      },
+      onProgress: (pct) => { $('mtgStatus').textContent = `Đang tải bộ nhận diện (chỉ lần đầu, nên dùng Wi-Fi): ${pct}%`; },
+      onStage: (st) => diag(`Hội trường nạp xong ${st.name} (${st.ms}ms)`),
+      onReady: (i) => diag(`Hội trường Whisper sẵn sàng (whisper-${i.model}, ${i.device}, nạp ${i.loadMs}ms)`),
+      onSpeaking: (on) => {
+        if (!running) return;
+        $('mtgStatus').textContent = on ? `🎤 Đang nghe ${NAMES[currentLang]}…` : `Đang nghe · ${NAMES[currentLang]} · micro: ${micInfo ? micInfo.label : ''}`;
+      },
+      onSentence: (r) => {
+        if (!running) return;
+        const rt = r.audioMs ? (r.asrMs / r.audioMs).toFixed(2) : '?';
+        stats.asr.push({ audioMs: r.audioMs, asrMs: r.asrMs });
+        checkSpeed(r);
+        diag(`Whisper ${r.lang} ${Math.round(r.prob * 100)}%${r.redo ? ' (chép lại theo tiếng đối tác)' : ''} · câu ${r.audioMs}ms · xử lý ${r.asrMs}ms (x${rt}${r.early ? ', sớm' : ''}): "${r.text}"`);
+        if (r.lang === 'vi') return diag('Hội trường bỏ câu tiếng Việt (giọng đọc của app lọt vào micro, hoặc có người nói tiếng Việt)');
+        commit(r.text, 'Whisper');
+      },
+      onDropped: (r) => diag(`Whisper bỏ: ${r.why} "${r.text || ''}"`),
+      onError: (m) => diag('LỖI Whisper (hội trường): ' + m),
+    });
+    return L;
+  }
+
+  // máy xử lý chậm hơn tốc độ nói → bản dịch tụt dần: báo cho người dùng cách xử lý
+  const speed = [];
+  function checkSpeed(r) {
+    if (!r.audioMs) return;
+    speed.push(r.asrMs / r.audioMs);
+    if (speed.length > 4) speed.shift();
+    const avg = speed.reduce((a, b) => a + b, 0) / speed.length;
+    if (speed.length >= 3 && avg > 1) {
+      const tip = Lmodel === 'base' ? 'Chọn "Bộ nhận diện: Nhanh" để theo kịp.' : 'Máy này quá chậm cho nhận diện trên máy; tắt bớt app khác, cắm sạc.';
+      setError($('mtgErr'), `Máy xử lý chậm hơn tốc độ nói (x${avg.toFixed(1)}) — bản dịch sẽ tụt dần. ${tip}`);
+    }
+  }
+
+  function fillMics(info) {
+    const sel = $('mtgMic');
+    const cur = readPref(MIC_KEY) || '';
+    sel.textContent = '';
+    const auto = document.createElement('option');
+    auto.value = '';
+    auto.textContent = 'Tự chọn micro điện thoại (khuyên dùng)' + (info.auto ? ` — đang dùng: ${info.label}` : '');
+    sel.appendChild(auto);
+    for (const d of info.devices) {
+      if (!d.deviceId || d.deviceId === 'default' || d.deviceId === 'communications') continue;
+      const o = document.createElement('option');
+      o.value = d.deviceId;
+      o.textContent = d.label || d.deviceId.slice(0, 8);
+      sel.appendChild(o);
+    }
+    sel.value = cur;
+  }
+
+  async function startMic() {
+    $('mtgToggle').disabled = true;
+    $('mtgStatus').textContent = 'Đang chuẩn bị bộ nhận diện…';
+    try {
+      // Tự chọn theo máy: có WebGPU → base (chính xác); chỉ có CPU → tiny (đo 11/10 trên CPU máy tính: base xử lý 0,4–1,3 lần
+      // thời lượng câu — điện thoại chậm hơn nhiều lần → không theo kịp người nói; tiny ~0,5 lần)
+      if (!hw) {
+        const forced = readPref('audit.mtgDevice.v1'); // 'wasm': ép chạy CPU (test / chẩn đoán)
+        hw = forced ? { device: forced, f16: false } : await pickDevice();
+        diag(`Hội trường: máy ${hw.device === 'webgpu' ? 'CÓ WebGPU (xử lý bằng card đồ hoạ)' : 'KHÔNG có WebGPU (xử lý bằng CPU, chậm hơn)'}`);
+      }
+      const pick = $('mtgModel').value;
+      const model = pick === 'auto' ? (hw.device === 'webgpu' ? 'base' : 'tiny') : pick;
+      const l = listener(model);
+      await l.start(); // tạo worker (lần đầu) rồi mới gửi cấu hình — gửi trước thì bị mất
+      l.config({ partner: currentLang, muted: false, keepPartner: true, early: hw.device === 'webgpu' });
+      speed.length = 0;
+      setRunning(true);
+      $('mtgStatus').textContent = `Đang nghe · ${NAMES[currentLang]} · micro: ${micInfo ? micInfo.label : ''}`;
+    } catch (e) {
+      diag('LỖI khởi động micro liên tục: ' + (e && (e.stack || e.message)));
+      setError($('mtgErr'), e && e.name === 'NotAllowedError' ? 'Chưa cấp quyền micro.' : 'Không mở được micro liên tục: ' + (e && e.message) + '. Thử chọn micro khác hoặc cách nghe "Chrome".');
+      try { L && L.stop(); } catch (_) {}
+    } finally {
+      $('mtgToggle').disabled = false;
+    }
+  }
+
   $('mtgToggle').onclick = () => {
-    if (!supported) return setError($('mtgErr'), 'Trình duyệt không hỗ trợ nhận diện giọng nói. Dùng Google Chrome.');
+    if (!useMic() && !supported) return setError($('mtgErr'), 'Trình duyệt không hỗ trợ nhận diện giọng nói. Dùng Google Chrome.');
     setError($('mtgErr'), '');
     committed = '';
     carry = '';
@@ -315,11 +434,13 @@ export function initMeeting() {
     resetInterim();
     if (running) {
       rec.stop();
+      if (L) L.stop();
       sayQueue.length = 0;
       cancel();
       setRunning(false);
     } else {
       startedAt = Date.now();
+      if (useMic()) return startMic();
       rec.setLang(currentLang);
       rec.start();
       setRunning(true);

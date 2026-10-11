@@ -28,6 +28,13 @@
     const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     bufs[k] = await ctx.decodeAudioData(bin.buffer);
   }));
+  // __echo(id, gain): phát 1 mẫu vào micro ở âm lượng nhỏ, chồng lên tiếng đang nói (giả lập giọng đọc của app lọt lại micro)
+  window.__echo = (id, gain = 0.3) => {
+    if (!bufs[id]) return;
+    const s = ctx.createBufferSource(); s.buffer = bufs[id];
+    const g = ctx.createGain(); g.gain.value = gain;
+    s.connect(g).connect(dest); s.start();
+  };
   window.__say = async (seq) => {
     await ctx.resume();
     let t = ctx.currentTime + 0.1;

@@ -94,21 +94,53 @@ export function createAutoListener(opts) {
     return ready;
   }
 
+  // opts.getStream (tuỳ chọn): trang tự mở micro (Hội trường: micro điện thoại, tắt mọi xử lý → tai nghe Bluetooth giữ chế
+  // độ nghe nhạc). opts.agc: tự tăng âm lượng bằng phần mềm (khi đã tắt bộ tự chỉnh âm lượng của máy).
+  let agcTimer = null;
   async function start() {
     await load();
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+    stream = opts.getStream
+      ? await opts.getStream()
+      : await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
     ctx = new AudioContext({ sampleRate: 16000 });
     const url = URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' }));
     await ctx.audioWorklet.addModule(url);
     URL.revokeObjectURL(url);
     node = new AudioWorkletNode(ctx, 'frames');
     node.port.onmessage = (e) => worker.postMessage({ type: 'frame', data: e.data }, [e.data.buffer]);
-    ctx.createMediaStreamSource(stream).connect(node);
+    const src = ctx.createMediaStreamSource(stream);
+    if (opts.agc) {
+      const gain = ctx.createGain();
+      const an = ctx.createAnalyser();
+      an.fftSize = 2048;
+      src.connect(an);
+      src.connect(gain).connect(node);
+      agcTimer = startAgc(an, gain, opts.onLevel);
+    } else src.connect(node);
     if (ctx.state !== 'running') await ctx.resume();
+  }
+
+  // Tự chỉnh âm lượng chậm: đỉnh tiếng (đo trước khi khuếch đại) trong ~3 giây gần nhất đưa về ~0,3. Tăng tối đa 12 lần
+  // (người nói ở xa điện thoại); không giảm dưới 1 (tiếng to đã đủ). Tiếng ồn nền nhỏ không bị kéo lên vì chỉ tính đỉnh.
+  function startAgc(an, gain, onLevel) {
+    const buf = new Float32Array(an.fftSize);
+    const peaks = [];
+    return setInterval(() => {
+      an.getFloatTimeDomainData(buf);
+      let pk = 0;
+      for (const v of buf) pk = Math.max(pk, Math.abs(v));
+      peaks.push(pk);
+      if (peaks.length > 12) peaks.shift();
+      const top = Math.max(...peaks);
+      const want = top > 0.003 ? Math.min(12, Math.max(1, 0.3 / top)) : gain.gain.value;
+      gain.gain.value += (want - gain.gain.value) * 0.3;
+      if (onLevel) onLevel({ peak: top, gain: gain.gain.value });
+    }, 250);
   }
 
   function stop() {
     if (worker) worker.postMessage({ type: 'flush' });
+    clearInterval(agcTimer);
     if (node) node.port.onmessage = null;
     if (stream) stream.getTracks().forEach((t) => t.stop());
     if (ctx) ctx.close().catch(() => {});
