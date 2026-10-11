@@ -9,10 +9,18 @@ import { speak, cancel } from './tts.js';
 import { diag } from './diagnostics.js';
 import { holdScreen, classifyMicError } from './keepalive.js';
 
+// nhớ theo máy: có đọc bản dịch không (mặc định có — 11/10 Lợi Minh test thấy ô tắt nên chỉ hiện chữ) và tiếng đang nghe
+const SPEAK_KEY = 'audit.mtgSpeak.v1';
+const LANG_KEY = 'audit.mtgLang.v1';
+const readPref = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
+const writePref = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
+
 export function initMeeting() {
   const log = [];
   let running = false;
-  let currentLang = 'en-US';
+  let currentLang = NAMES[readPref(LANG_KEY)] ? readPref(LANG_KEY) : 'en-US';
+  if (readPref(SPEAK_KEY)) $('mtgSpeak').checked = readPref(SPEAK_KEY) === '1';
+  $('mtgSpeak').onchange = () => writePref(SPEAK_KEY, $('mtgSpeak').checked ? '1' : '0');
 
   const rec = createRecognizer({
     name: 'hội-trường',
@@ -77,11 +85,14 @@ export function initMeeting() {
     $('mtgStatus').textContent = on ? 'Đang nghe · ' + NAMES[currentLang] : 'Đang tắt';
   }
 
-  document.querySelectorAll('#meetingLangChips .chip').forEach((chip) => {
+  const chips = document.querySelectorAll('#meetingLangChips .chip');
+  chips.forEach((c) => c.setAttribute('aria-pressed', String(c.dataset.lang === currentLang)));
+  chips.forEach((chip) => {
     chip.onclick = () => {
-      document.querySelectorAll('#meetingLangChips .chip').forEach((c) => c.setAttribute('aria-pressed', 'false'));
+      chips.forEach((c) => c.setAttribute('aria-pressed', 'false'));
       chip.setAttribute('aria-pressed', 'true');
       currentLang = chip.dataset.lang;
+      writePref(LANG_KEY, currentLang);
       rec && rec.setLang(currentLang);
       if (running) setRunning(true);
     };

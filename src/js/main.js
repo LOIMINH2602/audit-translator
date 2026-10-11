@@ -36,6 +36,8 @@ initMeeting();
 initSelfTest();
 initFieldTest();
 initConcurrentTest();
+// 11/10: Lợi Minh dừng phát triển 1:1, chỉ dùng Nghe hội trường → mở app vào thẳng màn này
+selectTab('mtg');
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
