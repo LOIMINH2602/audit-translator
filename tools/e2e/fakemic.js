@@ -35,6 +35,18 @@
     const g = ctx.createGain(); g.gain.value = gain;
     s.connect(g).connect(dest); s.start();
   };
+  // __span(id): [ms bắt đầu, ms kết thúc] của TIẾNG NÓI trong mẫu (bỏ khoảng lặng đầu/cuối file) — cửa sổ 20ms, ngưỡng theo
+  // đỉnh của mẫu (10% RMS cửa sổ lớn nhất). Giọng người thật thường có 0,2–0,8s lặng ở đầu file → mốc "đầu câu" phải trừ ra.
+  window.__span = (id) => {
+    const b = bufs[id];
+    if (!b) return [0, 0];
+    const d = b.getChannelData(0), w = Math.round(b.sampleRate * 0.02), rms = [];
+    for (let i = 0; i + w <= d.length; i += w) { let s = 0; for (let j = i; j < i + w; j++) s += d[j] * d[j]; rms.push(Math.sqrt(s / w)); }
+    const thr = Math.max(...rms) * 0.1;
+    const a = rms.findIndex((v) => v > thr), z = rms.length - 1 - [...rms].reverse().findIndex((v) => v > thr);
+    return [a * 20, (z + 1) * 20];
+  };
+  window.__dur = (id) => (bufs[id] ? bufs[id].duration * 1000 : 0); // thời lượng mẫu (ms): test tính mốc thật của từng câu
   window.__say = async (seq) => {
     await ctx.resume();
     let t = ctx.currentTime + 0.1;

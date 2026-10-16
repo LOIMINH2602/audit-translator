@@ -88,3 +88,12 @@ button.turn[hidden]{display:none}
 .live-out{font-size:16px;color:var(--ink);font-weight:500}
 label.chk select{font:inherit;max-width:100%}
 label.chk:has(select){flex-wrap:wrap}
+/* Hội trường phụ đề (16/10/2026): chỉ hiện chữ, đo độ trễ */
+#mtgLive .live-out{font-size:20px;line-height:1.35}
+.lat{display:flex;flex-direction:column;gap:6px}
+.lat-row{display:grid;grid-template-columns:1fr auto;gap:2px 10px;font-size:14px}
+.lat-row b{font-variant-numeric:tabular-nums;text-align:right}
+.lat-row small{grid-column:1/-1;color:var(--muted);font-size:12px}
+.lat-row.ok b{color:var(--accent)}
+.lat-row.bad b{color:var(--bad)}
+.big-out .entry .t{font-size:17px}
