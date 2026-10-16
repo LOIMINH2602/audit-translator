@@ -194,3 +194,12 @@ tra response thật). Claude Code cần tự verify toàn bộ luồng dịch + 
 - **Đo Whisper tiếng Hàn giọng thật (21 câu Zeroth, ép ko):** tiny 81% sạch / 64% Bluetooth; base 88% / 75%; small 62% / 52% (kém hơn base, không dùng).
 - **e2e** `node tools/e2e/meeting.mjs 12` (mặc định ENGINE=mic MODEL=auto; DEVICE=wasm ép CPU; ECHO=0.1 giọng đọc lọt micro; DIAG=1): live — micro mở 1 lần, đúng earpiece, tắt xử lý; nghe được 83–85% (GPU base), 61–68% (CPU tiny); ECHO 0.1: 65%, 0 câu rác; ECHO 0.35: 45–48%. Tốc độ máy tính: base GPU ~0,2× thời lượng câu; base CPU 0,4–1,3×; tiny CPU ~0,5×.
 - **Chưa kiểm (cần máy thật):** A2DP có giữ thật không; tốc độ trên điện thoại; WebGPU có không. Nhật ký: dòng "Hội trường micro: …", "máy CÓ/KHÔNG có WebGPU", "Whisper … xử lý Xms (xR)".
+
+## Cập nhật 16/10/2026 — Hội trường = phụ đề dịch real time, chỉ hiện chữ (bản 2026-10-16.3)
+- **Chốt với Lợi Minh:** không nghe qua tai nghe; Anh/Trung/Nhật/Hàn → Việt; mục tiêu chữ ≤ 0,5s, dịch tạm ≤ 1s, dịch chốt ≤ 1,5s sau khi hết câu. Làm theo bước: Bước 1 Lợi Minh test 5 phút, đạt mới làm tiếp.
+- `meeting.js` viết lại (bỏ TTS/micro liên tục/Whisper khỏi màn này — còn trong Git): SpeechRecognition (continuous=false), chốt câu như 11.4 + "ngừng nói & chốt trọn câu → rec.restart()" (Android đóng phiên muộn: câu ngắn Trung/Nhật bị mất đầu). STABLE 700ms, speechend + 350ms, nói liền 6s cắt đuôi câu Hàn, 9s cắt cứng.
+- Dịch tạm: `only: 'google'`, ≥ 500ms/lần, 1 yêu cầu cùng lúc, lỗi nghỉ 5s (Google chặn IP khi gọi dày — máy test bị chặn 16/10). Câu chốt trùng chữ bản dịch tạm → dùng luôn.
+- Đo độ trễ (`onset.js`, `meetstats.js`): micro getUserMedia song song (tắt xử lý) → mốc mở miệng/dứt lời theo năng lượng (hiệu chỉnh nền 0,3s đầu); không mở được → tín hiệu speechstart/speechend (ghi "ước tính"). Bảng `#mtgLat` trung vị · p90 của 30 lần gần nhất.
+- `main.js`: mỗi màn init trong `safe()`, `window.__appReady`; index.html báo nếu 6s chưa nạp. Nút Bắt đầu nghe khoá "Đang nạp…" tới khi initMeeting xong.
+- **e2e** `node tools/e2e/meeting.mjs [ko|en|zh|ja] [N]` (GAP, ANDROID=0, MOCK_TR=300 khi Google chặn, BASE_URL, SHOW, DIAG): mốc thật = vùng tiếng nói trong từng file (`__span`, trừ lặng đầu/cuối). Live, giả lập Android, dịch giả lập 0,3s: chữ thật 0,63–0,85s; dịch tạm 0,4s; chốt thật 0,89–1,12s; nghe được Hàn 87–88%, Anh 67–81%, Trung 88%, Nhật 98%; podcast Hàn nói liền 87%.
+- Mở lần đầu link live (profile trống): 1,0–1,2s. Sau deploy chờ ≥ 10 phút (Cache-Control max-age=600) trước khi test link live.
