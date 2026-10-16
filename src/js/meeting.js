@@ -348,4 +348,7 @@ export function initMeeting() {
   }
 
   $('mtgCopy').onclick = () => copyText(logToText(log), $('mtgCopy'));
+  // nút khoá tới lúc này (index.html): mạng chậm thì nút hiện trước khi mã nạp xong — bấm sớm sẽ không có gì xảy ra (test 16/10)
+  $('mtgToggle').disabled = false;
+  $('mtgToggle').textContent = 'Bắt đầu nghe';
 }

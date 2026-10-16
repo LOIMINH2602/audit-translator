@@ -76,6 +76,8 @@ const page = `window.__CLIPS=${JSON.stringify(clips)};\n` + readTool('fakemic.js
   }
   const $ = (id) => document.getElementById(id);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  for (let i = 0; i < 200 && !window.__appReady; i++) await sleep(100); // mã app nạp xong (mạng chậm: nút chưa hoạt động)
+  if (!window.__appReady) return { error: 'app không nạp xong sau 20 giây' };
   $('tabMeeting').click();
   document.querySelector('#meetingLangChips [data-lang="${SR_LANG}"]').click();
   $('mtgToggle').click();
