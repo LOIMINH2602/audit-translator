@@ -29,13 +29,26 @@ $('tabMeeting').onclick = () => selectTab('mtg');
 $('tabTest').onclick = () => selectTab('test');
 
 $('appVersion').textContent = 'Bản ' + APP_VERSION;
-initDiagnostics();
+// Mỗi màn khởi động riêng: 1 màn lỗi không làm hỏng màn khác. Lỗi thường gặp: vừa cập nhật bản mới, máy chủ GitHub còn lưu tạm
+// file cũ (tối đa 10 phút) → giao diện mới + mã cũ không khớp (test 16/10: màn Hội trường ra 0 câu ngay sau khi cập nhật).
+const STALE = 'App vừa được cập nhật, máy đang nhận lẫn bản cũ và bản mới. Đóng hẳn app, chờ khoảng 10 phút rồi mở lại.';
+function safe(name, fn) {
+  try {
+    return fn();
+  } catch (e) {
+    console.error(name, e);
+    $('browserWarn').textContent = STALE + ' (lỗi ở ' + name + ': ' + (e && e.message) + ')';
+    $('browserWarn').hidden = false;
+  }
+}
+safe('Chẩn đoán', initDiagnostics);
 // trạng thái màn 1:1 cho test tự động (tools/e2e) đọc
-window.__dialogue = initDialogue();
-initMeeting();
-initSelfTest();
-initFieldTest();
-initConcurrentTest();
+window.__dialogue = safe('Đối thoại 1:1', initDialogue);
+safe('Hội trường', initMeeting);
+safe('Tự kiểm tra', initSelfTest);
+safe('Đo tai nghe', initFieldTest);
+safe('Thử nghe song song', initConcurrentTest);
+window.__appReady = APP_VERSION;
 // 11/10: Lợi Minh dừng phát triển 1:1, chỉ dùng Nghe hội trường → mở app vào thẳng màn này
 selectTab('mtg');
 

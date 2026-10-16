@@ -128,6 +128,7 @@ console.log(`  THẬT (theo mốc âm thanh): chữ hiện sau khi bắt đầu 
 const s = r.stats.lat;
 console.log(`  app tự đo chi tiết: chữ ${summ(s.text)} · dịch tạm ${summ(s.draft)} · chốt ${summ(s.final)}`);
 console.log(`  cách chốt câu: ${Object.entries(r.stats.lines.reduce((m, x) => ((m[x.why] = (m[x.why] || 0) + 1), m), {})).map(([k, v]) => k + ' ' + v).join(', ')}`);
-if (process.env.DIAG) console.log(r.diag.split('\n').filter((l) => /chốt|LỖI|CẢNH BÁO/.test(l)).join('\n'));
+if (!r.entries.length) console.log('NHẬT KÝ ĐẦY ĐỦ (0 câu):\n' + r.diag + '\nSỰ KIỆN ĐẦU: ' + JSON.stringify(r.ev.slice(0, 5)));
+if (process.env.DIAG) console.log(r.diag.split('\n').filter((l) => /chốt|LỖI|CẢNH BÁO|error|start|end|đo|final|Micro|Trang/.test(l)).join('\n'));
 if (process.env.SHOW) r.entries.forEach((e, i) => console.log(`  ${i + 1}. ${e.src}\n     → ${e.out}`));
 console.log('  lỗi JS:', errors.length ? errors : 'không');

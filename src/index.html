@@ -216,5 +216,14 @@ quality manual=sổ tay chất lượng</textarea>
   <p class="sub" id="appVersion" style="text-align:center;font-size:11px"></p>
 </main>
 <script type="module" src="js/main.js"></script>
+<script>
+  // mã app không nạp được (thường do vừa cập nhật: máy chủ còn lưu tạm file cũ) → báo thay vì đứng im
+  setTimeout(function () {
+    if (window.__appReady) return;
+    var w = document.getElementById('browserWarn');
+    w.textContent = 'App chưa nạp xong (có thể vừa được cập nhật). Đóng hẳn app, chờ khoảng 10 phút rồi mở lại. Vẫn lỗi thì kiểm tra mạng.';
+    w.hidden = false;
+  }, 6000);
+</script>
 </body>
 </html>
