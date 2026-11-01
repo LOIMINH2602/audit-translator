@@ -1,12 +1,8 @@
-// Dịch miễn phí: Google (endpoint không chính thức) trước vì sạch hơn; lỗi/bị chặn thì rơi về MyMemory.
-// MyMemory chiều Việt→Nhật/Trung từng chèn chữ thừa nên chỉ dùng làm dự phòng.
+// Dịch miễn phí sang tiếng Việt: Google (endpoint không chính thức) trước; lỗi / bị chặn thì MyMemory.
 
-const MYMEMORY = 'https://api.mymemory.translated.net/get';
 const GOOGLE = 'https://translate.googleapis.com/translate_a/single';
-
-function code(lang) {
-  return lang === 'zh-CN' ? 'zh-CN' : lang.split('-')[0];
-}
+const MYMEMORY = 'https://api.mymemory.translated.net/get';
+const code = (lang) => (lang === 'zh-CN' ? 'zh-CN' : lang.split('-')[0]);
 
 async function getJson(url, timeoutMs) {
   const ctl = new AbortController();
@@ -20,54 +16,30 @@ async function getJson(url, timeoutMs) {
   }
 }
 
-async function viaMyMemory(text, from, to, timeoutMs) {
-  const url = `${MYMEMORY}?q=${encodeURIComponent(text)}&langpair=${code(from)}|${code(to)}`;
-  const d = await getJson(url, timeoutMs);
-  const out = d && d.responseData && d.responseData.translatedText;
-  // Hết hạn mức: MyMemory vẫn trả 200 nhưng nhét cảnh báo vào translatedText.
-  if (Number(d.responseStatus) !== 200 || !out || /MYMEMORY WARNING|QUERY LENGTH LIMIT/i.test(out)) {
-    throw new Error('mymemory_rejected');
-  }
-  return out;
-}
-
-async function viaGoogle(text, from, to, timeoutMs) {
-  const url = `${GOOGLE}?client=gtx&sl=${code(from)}&tl=${code(to)}&dt=t&q=${encodeURIComponent(text)}`;
-  const d = await getJson(url, timeoutMs);
+async function viaGoogle(text, from, timeoutMs) {
+  const d = await getJson(`${GOOGLE}?client=gtx&sl=${code(from)}&tl=vi&dt=t&q=${encodeURIComponent(text)}`, timeoutMs);
   return d[0].map((x) => x[0]).join('');
 }
 
-// Dò ngôn ngữ + dịch trong 1 lần gọi Google (sl=auto). Dùng để biết chuỗi nhận diện có đúng tiếng của
-// recognizer không. Google lỗi thì dịch bằng translate() với tiếng nguồn giả định, detected = null.
-// Trả về { text, detected, engine, ms }.
-// Google thường trả trong 0,1–0,3 giây; quá 3,5 giây là mạng/endpoint có vấn đề → chuyển dự phòng luôn.
-export async function detectTranslate(text, assumedFrom, to, { timeoutMs = 3500 } = {}) {
-  const t0 = performance.now();
-  try {
-    const url = `${GOOGLE}?client=gtx&sl=auto&tl=${code(to)}&dt=t&q=${encodeURIComponent(text)}`;
-    const d = await getJson(url, timeoutMs);
-    const out = d[0].map((x) => x[0]).join('');
-    return { text: out, detected: d[2] || null, engine: 'google', ms: Math.round(performance.now() - t0) };
-  } catch (_) {
-    const r = await translate(text, assumedFrom, to, { timeoutMs: 6000, only: 'mymemory' }); // Google vừa lỗi: không thử lại
-    return { ...r, detected: null, ms: Math.round(performance.now() - t0) };
-  }
+async function viaMyMemory(text, from, timeoutMs) {
+  const d = await getJson(`${MYMEMORY}?q=${encodeURIComponent(text)}&langpair=${code(from)}|vi`, timeoutMs);
+  const out = d && d.responseData && d.responseData.translatedText;
+  // hết hạn mức: MyMemory vẫn trả 200 nhưng nhét cảnh báo vào chữ dịch
+  if (Number(d.responseStatus) !== 200 || !out || /MYMEMORY WARNING|QUERY LENGTH LIMIT/i.test(out)) throw new Error('mymemory_rejected');
+  return out;
 }
 
-// Trả về { text, engine, ms } để UI hiển thị độ trễ dịch.
-export async function translate(text, from, to, { timeoutMs = 6000, only = null } = {}) {
-  const engines = [['google', viaGoogle], ['mymemory', viaMyMemory]].filter(([e]) => !only || e === only);
-  const t0 = performance.now();
+// googleOnly: bản dịch tạm (gọi dày) — không dùng hạn mức của MyMemory.
+export async function toVietnamese(text, from, { timeoutMs = 3500, googleOnly = false } = {}) {
   const errors = [];
-  for (const [engine, run] of engines) {
+  for (const [name, run] of googleOnly ? [['google', viaGoogle]] : [['google', viaGoogle], ['mymemory', viaMyMemory]]) {
     try {
-      const out = await run(text, from, to, timeoutMs);
-      return { text: out, engine, ms: Math.round(performance.now() - t0) };
+      return await run(text, from, timeoutMs);
     } catch (e) {
-      errors.push(`${engine}: ${e.name === 'AbortError' ? 'timeout' : e.message}`);
+      errors.push(`${name}: ${e.name === 'AbortError' ? 'quá giờ' : e.message}`);
     }
   }
-  const err = new Error('translate_failed');
-  err.details = errors.join(' | '); // để UI ghi vào nhật ký chẩn đoán
+  const err = new Error('Không dịch được (' + errors.join('; ') + ')');
+  err.details = errors.join('; ');
   throw err;
 }

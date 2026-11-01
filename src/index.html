@@ -5,225 +5,65 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Phiên Dịch Audit</title>
 <meta name="theme-color" content="#0B6E5F">
-<!-- Không gửi Referer: file đọc của Google Dịch (translate_tts) trả 404 nếu có Referer. API dịch không cần Referer. -->
 <meta name="referrer" content="no-referrer">
 <link rel="manifest" href="manifest.webmanifest">
-<!-- mở sẵn kết nối HTTPS tới dịch vụ dịch: câu đầu tiên đỡ ~0,3 giây bắt tay TLS trên 4G -->
+<link rel="icon" href="icon-192.png">
 <link rel="preconnect" href="https://translate.googleapis.com" crossorigin>
-<link rel="preconnect" href="https://api.mymemory.translated.net" crossorigin>
-<link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/app.css?v=2026-11-01.2">
 </head>
 <body>
 <header>
   <h1>Phiên Dịch Audit</h1>
-  <p class="sub">Nghe liên tục, dịch 2 chiều hoặc nghe hiểu phòng họp. Chạy trên trình duyệt, âm thanh ra tai nghe Bluetooth đang kết nối.</p>
+  <p class="sub">Nghe người nói và hiện bản dịch tiếng Việt.</p>
 </header>
 <main>
-  <div class="tabs" role="tablist">
-    <button class="tab" id="tabDialogue" role="tab" aria-selected="true">Đối thoại 1:1<br><small>chia sẻ tai nghe</small></button>
-    <button class="tab" id="tabMeeting" role="tab" aria-selected="false">Nghe hội trường<br><small>nhiều người, nhiều tiếng</small></button>
-    <button class="tab" id="tabTest" role="tab" aria-selected="false">Tự kiểm tra<br><small>test máy này</small></button>
-  </div>
+  <div class="warn" id="warn" hidden></div>
 
-  <div class="note" id="browserWarn" hidden>Trình duyệt này không hỗ trợ nhận diện giọng nói liên tục. Hãy mở trang bằng Google Chrome.</div>
-
-  <!-- Màn 1: đối thoại 1:1 -->
-  <section class="screen active" id="screenDialogue">
-    <div class="panel">
-      <span class="label">Ngôn ngữ đối tác</span>
-      <select id="partnerLang">
-        <option value="en-US">Tiếng Anh</option>
-        <option value="zh-CN">Tiếng Trung</option>
-        <option value="ja-JP">Tiếng Nhật</option>
-        <option value="ko-KR">Tiếng Hàn</option>
-      </select>
-      <span class="label">Cách nghe</span>
-      <select id="listenMode">
-        <option value="hybrid" selected>Tự nhận người nói — Google ra chữ, Whisper biết ai nói</option>
-        <option value="chrome">Chrome luân phiên (cách cũ, phải theo lượt)</option>
-        <option value="auto">Chỉ Whisper (thử nghiệm — chữ tiếng Việt kém)</option>
-      </select>
-      <div id="endSilBox">
-        <span class="label">Thời gian chờ nhận biết hết câu</span>
-        <select id="endSilMs">
-          <option value="500">0,5 giây — nhanh nhất</option>
-          <option value="800" selected>0,8 giây</option>
-          <option value="1200">1,2 giây</option>
-          <option value="1800">1,8 giây — người nói hay ngừng để nghĩ</option>
-          <option value="2500">2,5 giây</option>
-        </select>
-        <p class="sub" style="margin:4px 0 0">Lần đầu bấm Bắt đầu, app tải bộ nhận người nói chạy trên điện thoại (khoảng 80–250 MB tuỳ máy, nên dùng Wi-Fi). Các lần sau dùng lại, không tải nữa.</p>
-      </div>
-      <div id="holdBox" hidden>
-        <span class="label">Kết thúc lượt nói khi im lặng</span>
-        <select id="holdMs">
-          <option value="1000">1 giây</option>
-          <option value="1500">1,5 giây</option>
-          <option value="2000" selected>2 giây</option>
-          <option value="3000">3 giây — người nói hay ngừng để nghĩ</option>
-          <option value="4000">4 giây</option>
-        </select>
-      </div>
-      <span class="label">Giọng đọc bản dịch</span>
-      <select id="ttsEngine">
-        <option value="auto">Tự động — giọng máy chậm thì dùng giọng Google</option>
-        <option value="system">Giọng của máy</option>
-        <option value="google">Giọng Google Dịch (qua mạng)</option>
-      </select>
-      <span class="label">Tốc độ đọc bản dịch</span>
-      <select id="ttsRate">
-        <option value="1">Bình thường</option>
-        <option value="1.2" selected>Nhanh</option>
-        <option value="1.4">Rất nhanh</option>
-      </select>
-      <p class="sub" style="margin:0">Cả hai người cứ nói tự nhiên, không cần bấm gì. Mỗi câu nói xong, app tự nhận là tiếng Việt hay tiếng của đối tác, dịch và đọc ngay vào tai nghe.</p>
+  <section class="panel">
+    <span class="label">Người đang nói dùng tiếng gì?</span>
+    <div class="langs" id="langs">
+      <button data-lang="ko-KR">Hàn</button>
+      <button data-lang="ja-JP">Nhật</button>
+      <button data-lang="zh-CN">Trung</button>
+      <button data-lang="en-US">Anh</button>
     </div>
-
-    <div class="panel">
-      <button class="primary big" id="dlgToggle">Bắt đầu nghe</button>
-      <div class="status"><span class="dot" id="dlgDot"></span><span id="dlgStatus">Đang tắt</span></div>
-      <button class="turn" id="dlgTurn" hidden></button>
-      <div class="live-box">
-        <div class="orig" id="dlgOrig"></div>
-        <div class="trans" id="dlgTrans"></div>
-      </div>
-      <div class="err" id="dlgErr" hidden></div>
-    </div>
-
-    <div class="panel">
-      <div class="row" style="justify-content:space-between">
-        <span class="label">Biên bản</span>
-        <div class="row">
-          <button class="ghost" id="dlgShareLog">Gửi nhật ký</button>
-          <button class="ghost" id="dlgCopy" disabled>Sao chép tất cả</button>
-        </div>
-      </div>
-      <div class="log" id="dlgLog"></div>
-    </div>
+    <button class="toggle" id="toggle" disabled>Đang nạp…</button>
+    <div class="status" id="status">Chọn tiếng rồi bấm Bắt đầu nghe</div>
   </section>
 
-  <!-- Màn 2: nghe hội trường -->
-  <section class="screen" id="screenMeeting">
-    <div class="panel">
-      <span class="label">Người đang nói dùng tiếng gì?</span>
-      <div class="chips" id="meetingLangChips">
-        <button class="chip" data-lang="en-US" aria-pressed="true">Tiếng Anh</button>
-        <button class="chip" data-lang="zh-CN" aria-pressed="false">Tiếng Trung</button>
-        <button class="chip" data-lang="ja-JP" aria-pressed="false">Tiếng Nhật</button>
-        <button class="chip" data-lang="ko-KR" aria-pressed="false">Tiếng Hàn</button>
-      </div>
-      <p class="sub" style="margin:0">Chạm đổi khi người nói đổi ngôn ngữ. Nhận diện giọng nói chỉ xử lý được 1 ngôn ngữ mỗi lúc.</p>
-    </div>
-
-    <div class="panel">
-      <button class="primary big" id="mtgToggle" disabled>Đang nạp…</button>
-      <div class="status"><span class="dot" id="mtgDot"></span><span id="mtgStatus">Đang tắt</span></div>
-      <div class="err" id="mtgErr" hidden></div>
-      <div class="live-sub" id="mtgLive">
-        <div class="live-src" id="mtgLiveSrc">Chữ người nói sẽ hiện ở đây ngay khi họ đang nói.</div>
-        <div class="live-out" id="mtgLiveOut">Bản dịch tiếng Việt tạm thời cập nhật liên tục.</div>
-      </div>
-    </div>
-
-    <div class="panel">
-      <span class="label">Độ trễ đo trên máy này (trung vị · chậm nhất 10% câu)</span>
-      <div class="lat" id="mtgLat">
-        <div class="lat-row" data-k="text"><span>Chữ hiện sau khi bắt đầu nói</span><b>–</b><small>mục tiêu ≤ 0,5 giây</small></div>
-        <div class="lat-row" data-k="draft"><span>Bản dịch tạm sau khi có chữ mới</span><b>–</b><small>mục tiêu ≤ 1 giây</small></div>
-        <div class="lat-row" data-k="final"><span>Bản dịch chốt sau khi hết câu</span><b>–</b><small>mục tiêu ≤ 1,5 giây</small></div>
-      </div>
-      <p class="sub" id="mtgLatNote" style="margin:0"></p>
-    </div>
-
-    <div class="panel">
-      <div class="row" style="justify-content:space-between">
-        <span class="label">Bản dịch đã chốt (mới nhất trên đầu)</span>
-        <button class="ghost" id="mtgCopy" disabled>Sao chép tất cả</button>
-      </div>
-      <div class="log big-out" id="mtgLog"></div>
-    </div>
+  <section class="panel live" aria-live="polite">
+    <div class="live-vi" id="liveVi">Bản dịch tiếng Việt sẽ hiện ở đây.</div>
+    <div class="live-src" id="liveSrc"></div>
   </section>
 
-  <!-- Tab 3: tự kiểm tra -->
-  <section class="screen" id="screenTest">
-    <div class="panel">
-      <span class="label">Tự kiểm tra máy này</span>
-      <p class="sub" style="margin:0">Bấm 1 nút, app tự thử micro, nhận diện, dịch, giọng đọc rồi tự chấm và lập báo cáo (khoảng 3 phút). Mở bằng Chrome, ở nơi yên tĩnh, đeo tai nghe sẽ dùng khi audit.</p>
-      <span class="label">Ngôn ngữ đối tác để thử</span>
-      <select id="stPartner">
-        <option value="en-US">Tiếng Anh</option>
-        <option value="zh-CN">Tiếng Trung</option>
-        <option value="ja-JP">Tiếng Nhật</option>
-        <option value="ko-KR">Tiếng Hàn</option>
-      </select>
-      <button class="primary big" id="stStart">Bắt đầu tự kiểm tra</button>
-      <span class="label">Thử nghe song song (khoảng 30 giây)</span>
-      <p class="sub" style="margin:0">Kiểm tra máy này có cho app và bộ nghe của Google cùng dùng micro không. Nếu có, app sẽ dùng Google để ra chữ (chính xác nhất) và tự nhận ai đang nói. Đọc to 1 câu mẫu 2 lần.</p>
-      <button class="primary big" id="stConc">Thử nghe song song</button>
-      <span class="label">Đo tai nghe &amp; độ trễ (khoảng 5 phút)</span>
-      <p class="sub" style="margin:0">Đeo tai nghe Bluetooth như khi audit. App phát tiếng bíp, anh chạm nút khi nghe thấy và trả lời nghe ở tai nào. App đo: tai trái/phải có tách được không, tai nghe mất bao lâu mới phát được tiếng sau khi micro tắt, và từ lúc dứt lời tới lúc nghe bản dịch mất bao lâu ở từng bước. Làm xong, tắt Bluetooth và đo lại bằng loa điện thoại để so sánh.</p>
-      <button class="big" id="stField">Đo tai nghe &amp; độ trễ</button>
-      <div class="st-ask" id="stAsk"></div>
-      <div class="st-list" id="stList"></div>
+  <section class="panel">
+    <div class="row">
+      <span class="label">Đã dịch (mới nhất trên đầu)</span>
+      <span>
+        <button class="small" id="copy" disabled>Sao chép</button>
+        <button class="small" id="clear">Xoá</button>
+      </span>
     </div>
-    <div class="panel" id="stReportPanel" hidden>
-      <span class="label">Kết quả</span>
-      <div id="stSummary"></div>
-      <div class="row">
-        <button class="primary" id="stShare" hidden>Gửi báo cáo</button>
-        <button id="stCopy">Sao chép báo cáo</button>
-      </div>
-      <pre class="diag" id="stReport"></pre>
-    </div>
+    <div id="history"></div>
   </section>
 
-  <div class="panel">
-    <details>
-      <summary>Bảng thuật ngữ ngành (áp vào bản dịch tiếng Việt, sửa theo khách hàng)</summary>
-      <textarea id="glossary" spellcheck="false">corrective action and preventive action=hành động khắc phục và phòng ngừa
-non-conformity=điểm không phù hợp
-nonconformance=điểm không phù hợp
-traceability=truy xuất nguồn gốc
-chain of custody=chuỗi hành trình sản phẩm
-corrective action=hành động khắc phục
-root cause=nguyên nhân gốc
-internal audit=đánh giá nội bộ
-management review=xem xét của lãnh đạo
-work instruction=hướng dẫn công việc
-quality manual=sổ tay chất lượng</textarea>
-    </details>
-  </div>
+  <details class="panel">
+    <summary>Chẩn đoán (gửi cho người hỗ trợ khi app lỗi)</summary>
+    <button class="small" id="copyLog">Sao chép nhật ký</button>
+    <pre id="log"></pre>
+  </details>
 
-  <div class="panel">
-    <details>
-      <summary>Chẩn đoán &amp; cài đặt thử nghiệm</summary>
-      <div class="panel" style="border:none;padding:10px 0 0">
-        <span class="label">Dịch</span>
-        <button class="ghost small" id="diagTranslate">Thử dịch</button>
-        <span class="label">Giọng đọc có trên máy</span>
-        <div id="diagVoices"></div>
-        <div class="row" style="justify-content:space-between">
-          <span class="label">Nhật ký sự kiện</span>
-          <button class="ghost small" id="diagCopy">Sao chép nhật ký</button>
-        </div>
-        <pre class="diag" id="diagLog"></pre>
-      </div>
-    </details>
-  </div>
-
-  <p class="sub" style="text-align:center">Dịch bằng dịch vụ miễn phí (Google / MyMemory). Có thể sai thuật ngữ hiếm — luôn chụp lại bản gốc để đối chiếu.</p>
-  <p class="sub" id="appVersion" style="text-align:center;font-size:11px"></p>
+  <p class="foot" id="version"></p>
 </main>
-<script type="module" src="js/main.js"></script>
+<script type="module" src="js/app.js?v=2026-11-01.2"></script>
 <script>
-  // mã app không nạp được (thường do vừa cập nhật: máy chủ còn lưu tạm file cũ) → báo thay vì đứng im
+  // mã app không nạp được (mạng hoặc vừa cập nhật) → báo thay vì đứng im
   setTimeout(function () {
     if (window.__appReady) return;
-    var w = document.getElementById('browserWarn');
-    w.textContent = 'App chưa nạp xong (có thể vừa được cập nhật). Đóng hẳn app, chờ khoảng 10 phút rồi mở lại. Vẫn lỗi thì kiểm tra mạng.';
+    var w = document.getElementById('warn');
+    w.textContent = 'App chưa nạp xong. Kiểm tra mạng, đóng hẳn app rồi mở lại.';
     w.hidden = false;
-  }, 6000);
+  }, 8000);
 </script>
 </body>
 </html>
