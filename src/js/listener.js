@@ -14,8 +14,9 @@ const START_TIMEOUT_MS = 3000;
 const BACKOFF_MS = 1500; // lỗi tạm (mạng, micro bận): chờ rồi thử lại
 // Phiên treo: đo trên S22 Ultra của Lợi Minh 01/11/2026 (gỡ lỗi USB): mạng 4G mất 1 nhịp (GRPC 14) + chưa có gói tiếng Hàn offline
 // → dịch vụ giọng nói Google mở micro cho phiên mới rồi treo, không bắn kết quả / lỗi / kết thúc nào → app "Đang nghe" mà chết hẳn.
-// Phiên bình thường (kể cả im lặng) luôn kết thúc trong ~5–8s → STALL_MS không có sự kiện nào = treo → bỏ, tạo phiên mới.
-const STALL_MS = 15000;
+// Đo phiên thật trên S22 (4 lượt, 01/11): trung vị 4–5s, dài nhất 19s (bản tin nói liền), khoảng im giữa 2 sự kiện tới 12s.
+// 15s đã giết nhầm phiên đang nhận diện câu dài (mất cả câu). Phiên treo thật im mãi → 40s.
+const STALL_MS = 40000;
 
 // on: { interim(text), final(text), speechStart(), speechEnd(), start(), error(code), log(msg) }
 export function createListener(on) {
