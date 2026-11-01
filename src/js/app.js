@@ -3,11 +3,11 @@
 // Luồng: bộ nhận diện Chrome (listener.js) → chữ tạm hiện ngay + bản dịch tạm → tự chốt câu (segment.js) → bản dịch chốt.
 // Phiên bản: đổi bằng `npm run bump` (đổi cả ?v= ở index.html và các import để máy không nạp lẫn file cũ / mới).
 
-import { createListener, supported } from './listener.js?v=2026-11-01.2';
-import { toVietnamese } from './translate.js?v=2026-11-01.2';
-import { delta, sentenceCut, dropLastWord, isFragment, spaced } from './segment.js?v=2026-11-01.2';
+import { createListener, supported } from './listener.js?v=2026-11-01.3';
+import { toVietnamese } from './translate.js?v=2026-11-01.3';
+import { delta, sentenceCut, dropLastWord, isFragment, spaced } from './segment.js?v=2026-11-01.3';
 
-export const VERSION = '2026-11-01.2';
+export const VERSION = '2026-11-01.3';
 
 const LANGS = { 'ko-KR': 'Hàn', 'ja-JP': 'Nhật', 'zh-CN': 'Trung', 'en-US': 'Anh' };
 const LANG_KEY = 'dich.lang';
@@ -45,8 +45,18 @@ let firstAt = 0;
 let onsetAt = 0;
 let speechEndAt = 0;
 let speechEndTimer = null;
+let lastHealthMsg = ''; // lời báo tự chẩn đoán đang hiện
 const resetInterim = () => { raw = ''; interim = ''; interimAt = 0; firstAt = 0; };
-const health = { startedAt: 0, sessions: 0, speech: 0, text: 0, lastTextAt: 0, lastError: '' };
+const health = { startedAt: 0, sessions: 0, speech: 0, text: 0, lastTextAt: 0, lastError: '', errorAt: 0 };
+const ERROR_FRESH_MS = 15000; // lỗi mạng/micro chỉ được nêu nếu xảy ra trong chừng này (test thật 01/11: 1 lần mạng chập chờn,
+// chữ vẫn ra bình thường, nhưng lúc người nói ngừng 6 giây app lại báo "không kết nối được" theo lỗi cũ)
+function gotText() {
+  health.text++;
+  health.lastTextAt = now();
+  health.lastError = '';
+  if (lastHealthMsg && $('warn').textContent === lastHealthMsg) setWarn(''); // đã ra chữ lại: gỡ lời báo ngay
+  lastHealthMsg = '';
+}
 const lat = { text: [], draft: [], final: [] };
 const history = [];
 window.__app = { lat, history, health, version: VERSION }; // cho bài test tự động đọc
@@ -87,8 +97,7 @@ const listener = supported && createListener({
     const d = delta(t, done, lang);
     if (!d || d === interim) return;
     const at = now();
-    health.text++;
-    health.lastTextAt = at;
+    gotText();
     if (onsetAt) { record('text', at - onsetAt); onsetAt = 0; }
     speechEndAt = 0;
     if (!firstAt) firstAt = at;
@@ -104,8 +113,7 @@ const listener = supported && createListener({
     done = '';
     resetInterim();
     if (d) {
-      health.text++;
-      health.lastTextAt = now();
+      gotText();
       commit(d, end);
     }
   },
@@ -126,6 +134,7 @@ const listener = supported && createListener({
   },
   error(code) {
     health.lastError = code;
+    health.errorAt = now();
     if (!running) return;
     if (code === 'not-allowed') {
       if (document.hidden) return; // Android chặn nghe khi trang ẩn — hiện lại thì nghe tiếp (onVisible)
@@ -269,14 +278,14 @@ function renderHistory() {
 }
 
 // ---------- tự chẩn đoán: đang nghe mà không ra chữ thì nói rõ kẹt ở đâu ----------
-let lastHealthMsg = '';
 setInterval(() => {
   if (!running) return;
   const quiet = now() - (health.lastTextAt || health.startedAt);
   let msg = '';
+  const err = now() - health.errorAt < ERROR_FRESH_MS ? health.lastError : '';
   if (quiet >= SILENT_WARN_MS) {
-    if (health.lastError === 'audio-capture') msg = 'Không lấy được tiếng từ micro: app khác đang dùng micro (gọi điện, ghi âm, Zalo). Tắt app đó rồi bấm Dừng → Bắt đầu nghe.';
-    else if (health.lastError === 'network') msg = 'Không kết nối được dịch vụ nhận diện giọng nói của Google. Kiểm tra Wi-Fi / 4G.';
+    if (err === 'audio-capture') msg = 'Không lấy được tiếng từ micro: app khác đang dùng micro (gọi điện, ghi âm, Zalo). Tắt app đó rồi bấm Dừng → Bắt đầu nghe.';
+    else if (err === 'network') msg = 'Không kết nối được dịch vụ nhận diện giọng nói của Google. Kiểm tra Wi-Fi / 4G.';
     else if (!health.sessions) msg = 'Bộ nhận diện giọng nói chưa khởi động được. Bấm Dừng → Bắt đầu nghe; vẫn lỗi thì đóng hẳn app và mở lại.';
     else if (!health.speech) msg = 'Micro chưa nghe thấy tiếng nói nào. Đặt điện thoại gần người nói hoặc gần loa hơn.';
     else if (!health.text) msg = `Micro có nghe thấy tiếng nhưng không ra chữ. Kiểm tra đã chọn đúng tiếng người đang nói (đang chọn: ${LANGS[lang]}).`;
@@ -322,7 +331,7 @@ function start() {
   done = '';
   resetInterim();
   onsetAt = speechEndAt = 0;
-  Object.assign(health, { startedAt: now(), sessions: 0, speech: 0, text: 0, lastTextAt: 0, lastError: '' });
+  Object.assign(health, { startedAt: now(), sessions: 0, speech: 0, text: 0, lastTextAt: 0, lastError: '', errorAt: 0 });
   running = true;
   listener.start(lang);
   holdScreen(true);

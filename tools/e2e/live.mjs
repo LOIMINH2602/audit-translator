@@ -2,6 +2,7 @@
 //   node tools/e2e/live.mjs [ko|en|zh|ja] [N=10]
 //   GAP=1200 ms ngừng giữa các câu (250 = nói liền kiểu podcast) · ANDROID=0 tắt giả lập Chrome Android
 //   STEAL=0 tắt giả lập "trang mở thêm micro thì bộ nhận diện chỉ nhận im lặng" (lỗi thật trên điện thoại 01/11 — mặc định bật)
+//   NETERR=1 giả 1 lỗi mạng của bộ nhận diện ngay sau khi bắt đầu (ảnh thật 01/11: dòng đỏ "không kết nối" hiện mãi dù chữ vẫn ra)
 //   MOCK_TR=300 dịch giả lập (khi Google chặn máy test) · BASE_URL=… test link thật · SHOW=1 in từng câu · CHIP=ja-JP chọn sai tiếng
 // Giọng: ko/en = người thật (tools/whisper/real/, tải bằng `node tools/whisper/fetch-real.mjs`); zh/ja = giọng Google đọc.
 // Chấm: số câu dịch, nghe được (khớp chữ), độ trễ THẬT theo mốc âm thanh (chữ = đầu câu → có chữ; chốt = cuối câu → bản dịch
@@ -61,8 +62,12 @@ const page = `window.__CLIPS=${JSON.stringify(clips)};\n` + readTool('fakemic.js
   for (let i = 0; i < 200 && !window.__appReady; i++) await sleep(100);
   if (!window.__appReady) return { error: 'app không nạp xong sau 20 giây' };
   document.querySelector('#langs [data-lang="${process.env.CHIP || SR_LANG}"]').click();
+  const SRP = window.webkitSpeechRecognition.prototype;
+  const st = SRP.start;
+  SRP.start = function (...a) { window.__lastSR = this; return st.apply(this, a); };
   $('toggle').click();
   await sleep(2500);
+  if (${Boolean(process.env.NETERR)} && window.__lastSR && window.__lastSR.onerror) window.__lastSR.onerror({ error: 'network' });
   const ids = ${JSON.stringify(items.map((x) => x.id))};
   const marks = [];
   let t = performance.now() + 100; // __say phát sau 100ms
@@ -70,9 +75,12 @@ const page = `window.__CLIPS=${JSON.stringify(clips)};\n` + readTool('fakemic.js
   const ev = [];
   new MutationObserver(() => ev.push({ t: performance.now(), k: 'src' })).observe($('liveSrc'), { childList: true, characterData: true, subtree: true });
   new MutationObserver(() => ev.push({ t: performance.now(), k: 'log' })).observe($('history'), { childList: true });
+  const warns = [];
+  new MutationObserver(() => { const w = $('warn').hidden ? '' : $('warn').textContent; if (w && warns.at(-1) !== w) warns.push(w); })
+    .observe($('warn'), { attributes: true, childList: true, characterData: true, subtree: true });
   const total = await __say(${JSON.stringify(seq)});
   await sleep(total + 6000);
-  return { version: $('version').textContent, total: Math.round(total), history: window.__app.history, marks, ev, gum: window.__gumCalls,
+  return { version: $('version').textContent, total: Math.round(total), history: window.__app.history, marks, ev, gum: window.__gumCalls, warns,
     warn: $('warn').hidden ? '' : $('warn').textContent, log: $('log').textContent };
 })()`;
 
@@ -99,6 +107,7 @@ console.log(`${r.version} · tiếng ${L} · ${ANDROID ? 'giả lập Android' :
 console.log(`  câu đã dịch: ${r.history.length} · nghe được (khớp chữ): ${pct(similarity(items.map((x) => x.text).join(' '), heard))}`);
 console.log(`  THẬT: chữ hiện sau khi bắt đầu nói ${sec(q(textLat, 0.5))} (chậm nhất 10% ${sec(q(textLat, 0.9))}) · dịch chốt sau khi hết câu ${sec(q(finalLat, 0.5))} (chậm nhất 10% ${sec(q(finalLat, 0.9))})`);
 console.log(`  lời báo trên màn hình: ${r.warn || '(không có)'}`);
+console.log(`  dòng đỏ đã hiện trong buổi: ${r.warns.length ? r.warns.map((w) => '"' + w.slice(0, 60) + '"').join(', ') : '(không lần nào)'}`);
 console.log(`  app mở thêm micro: ${r.gum} lần · lỗi JS: ${errors.length ? errors.join(' | ') : 'không'}`);
 if (process.env.SHOW) r.history.forEach((x, i) => console.log(`  ${i + 1}. ${x.src}\n     → ${x.vi}`));
-if (!r.history.length) console.log('NHẬT KÝ:\n' + r.log);
+if (!r.history.length || process.env.LOG) console.log('NHẬT KÝ:\n' + r.log);

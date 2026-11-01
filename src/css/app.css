@@ -39,3 +39,4 @@ button.small{padding:6px 10px;font-size:12px}
 summary{cursor:pointer;color:var(--muted);font-size:13px;font-weight:600}
 pre{margin:0;font-size:11px;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto}
 .foot{text-align:center;font-size:11px;color:var(--muted);margin:0}
+.row>span:last-child{display:flex;gap:6px;flex-shrink:0}
