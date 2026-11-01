@@ -203,3 +203,8 @@ tra response thật). Claude Code cần tự verify toàn bộ luồng dịch + 
 - `main.js`: mỗi màn init trong `safe()`, `window.__appReady`; index.html báo nếu 6s chưa nạp. Nút Bắt đầu nghe khoá "Đang nạp…" tới khi initMeeting xong.
 - **e2e** `node tools/e2e/meeting.mjs [ko|en|zh|ja] [N]` (GAP, ANDROID=0, MOCK_TR=300 khi Google chặn, BASE_URL, SHOW, DIAG): mốc thật = vùng tiếng nói trong từng file (`__span`, trừ lặng đầu/cuối). Live, giả lập Android, dịch giả lập 0,3s: chữ thật 0,63–0,85s; dịch tạm 0,4s; chốt thật 0,89–1,12s; nghe được Hàn 87–88%, Anh 67–81%, Trung 88%, Nhật 98%; podcast Hàn nói liền 87%.
 - Mở lần đầu link live (profile trống): 1,0–1,2s. Sau deploy chờ ≥ 10 phút (Cache-Control max-age=600) trước khi test link live.
+
+## Cập nhật 01/11/2026 — bản 2026-11-01.1: bỏ micro thứ 2, tự chẩn đoán trên màn hình
+- Test thật 16.3: "Đang nghe" nhưng không ra chữ. Nghi `onset.js` (getUserMedia song song) chiếm micro của SpeechRecognition trên điện thoại. **Quy tắc: màn Hội trường không được mở getUserMedia** — bộ nhận diện là thứ duy nhất giữ micro. `onset.js` còn trong repo, không dùng.
+- Tự chẩn đoán (`meeting.js`, `health`): mỗi giây, nghe ≥ 6s không có chữ mới → `#mtgErr` báo theo thứ tự: lỗi đã biết (not-allowed, audio-capture, network, language-not-supported, service-not-allowed) / chưa có phiên nào start / không có speechstart / có speechstart mà không có chữ. Không phát hiện được chọn sai tiếng (Google vẫn đoán ra chữ).
+- e2e: `STEAL=1` (fakemic: trang gọi getUserMedia thì SR nhận track im lặng — bản 16.3 ra 0 câu), `CHIP=` chọn tiếng khác tiếng phát, in "app mở thêm micro: N lần". Live 01/11, giả lập Android + STEAL: 4 tiếng ra chữ, 0 lần mở thêm micro; chữ thật 0,64–0,80s, chốt thật 0,88–1,16s.
