@@ -1,7 +1,7 @@
 // Nghe liên tục bằng bộ nhận diện giọng nói của Chrome (Google). Đây là thứ DUY NHẤT trong app dùng micro — app không gọi
 // getUserMedia (bài học 11/2026: mở thêm micro song song thì trên điện thoại bộ nhận diện chỉ nhận im lặng).
-// continuous=true (01/11/2026): Chrome Android mới (mã nguồn 12/10/2026) giữ 1 phiên tới 5 phút, cắt câu bên trong — ít mở/huỷ
-// phiên. Chrome cũ thì phiên vẫn hết sau mỗi câu như trước → mở phiên mới ngay. Mỗi phiên 1 đối tượng SpeechRecognition mới.
+// continuous=FALSE (01/11 đêm): continuous=true trên Chrome Android trước bản sửa 12/10/2026 lặp lại chữ đã chốt ở mọi kết quả sau
+// → câu đầu dính vào mọi bản dịch (test thật bản 2026-11-01.4). Mỗi câu 1 phiên, phiên tự hết thì mở phiên mới.
 // Lỗi "network": Chrome Android gộp ERROR_NETWORK / NETWORK_TIMEOUT / SERVER của dịch vụ Google vào 1 mã (SpeechRecognitionImpl.java)
 // — thường là lỗi tạm của máy chủ, không phải mất mạng → thử lại ngay (0,25s), lỗi liên tiếp mới chờ lâu dần.
 // Phiên khởi động không xong sau START_TIMEOUT_MS, hoặc chạy mà STALL_MS không có sự kiện nào (Chrome bỏ qua một số lỗi của
@@ -51,7 +51,7 @@ export function createListener(on) {
     const r = new SR();
     rec = r;
     r.lang = lang;
-    r.continuous = true;
+    r.continuous = false;
     r.interimResults = true;
     r.maxAlternatives = 1;
     const live = () => r === rec;

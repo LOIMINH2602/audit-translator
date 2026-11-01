@@ -2,11 +2,21 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { delta, sentenceCut, dropLastWord, isFragment } from '../src/js/segment.js';
 
-test('delta: lấy phần mới sau phần đã chốt; Google sửa chữ cũ thì bỏ theo số từ', () => {
-  assert.equal(delta('a b c d', '', 'en-US'), 'a b c d');
-  assert.equal(delta('a b c d', 'a b', 'en-US'), 'c d');
-  assert.equal(delta('A x c d', 'a b', 'en-US'), 'c d');
-  assert.equal(delta('请让我看一下记录', '请让我', 'zh-CN'), '看一下记录');
+test('delta: lấy phần mới sau phần đã chốt; Google sửa vài chữ cũ vẫn nhận ra', () => {
+  assert.equal(delta('a b c d', ''), 'a b c d');
+  assert.equal(delta('a b c d', 'a b'), 'c d');
+  assert.equal(delta('지난해 3월 김 전 장관의 동료인 교수가 작업에 들어갔다', '지난해 3월 김 전 장관의 동료인'), '교수가 작업에 들어갔다');
+  assert.equal(delta('지난해 3월 김 전 장관에 동료인 교수가', '지난해 3월 김 전 장관의 동료인'), '교수가'); // Google sửa 1 chữ cũ
+  assert.equal(delta('请让我看一下记录', '请让我'), '看一下记录');
+});
+
+test('delta: câu mới không bắt đầu bằng phần đã chốt → giữ nguyên, không cắt bừa', () => {
+  assert.equal(delta('세계보건기구의 노화 프로그램', '지난해 3월 김 전 장관의 동료인'), '세계보건기구의 노화 프로그램');
+});
+
+test('delta: Chrome Android lặp lại câu đã chốt ở đầu kết quả mới (lỗi trước 12/10/2026) → chỉ lấy phần mới', () => {
+  const first = '지난해 3월 김 전 장관의 동료인 장동연 홍익대 교수가 민간자문단장으로 위촉되면서 본격적인 공모와 개발 작업에 들어갔다';
+  assert.equal(delta(first + ' 세계보건기구의 노화', first), '세계보건기구의 노화');
 });
 
 test('sentenceCut: tiếng Hàn theo đuôi câu, không cắt ở từ cuối đang nghe dở', () => {

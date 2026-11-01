@@ -61,6 +61,7 @@ const page = `window.__CLIPS=${JSON.stringify(clips)};\n` + readTool('fakemic.js
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   for (let i = 0; i < 200 && !window.__appReady; i++) await sleep(100);
   if (!window.__appReady) return { error: 'app không nạp xong sau 20 giây' };
+  if (${JSON.stringify(process.env.RESTART || '')}) localStorage.setItem('dich.restart', ${JSON.stringify(process.env.RESTART || '')});
   document.querySelector('#langs [data-lang="${process.env.CHIP || SR_LANG}"]').click();
   const SRP = window.webkitSpeechRecognition.prototype;
   const st = SRP.start;
@@ -69,6 +70,26 @@ const page = `window.__CLIPS=${JSON.stringify(clips)};\n` + readTool('fakemic.js
   window.__netErrs = 0;
   SRP.start = function (...a) {
     window.__lastSR = this;
+    // CUMUL=1 giả lập chế độ continuous bị lỗi của Chrome Android trước 12/10/2026 (test thật 01/11: câu đầu tiên dính vào mọi
+    // bản dịch sau): mỗi kết quả mới lặp lại toàn bộ chữ đã chốt trước đó trong phiên.
+    if (${Boolean(process.env.CUMUL)} && !this.__cumul) {
+      this.__cumul = true;
+      let finals = '';
+      const self = this;
+      const wrap = (h) => function (e) {
+        const out = [];
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i];
+          const t = (finals ? finals + ' ' : '') + r[0].transcript.trim();
+          const item = [{ transcript: t, confidence: 0 }];
+          item.isFinal = r.isFinal;
+          out.push(item);
+          if (r.isFinal) finals = t;
+        }
+        return h.call(self, { resultIndex: 0, results: out });
+      };
+      if (this.onresult) this.onresult = wrap(this.onresult); // app gán onresult trước khi start()
+    }
     const r = st.apply(this, a);
     if (Math.random() < ${Number(process.env.NETRATE || 0)}) setTimeout(() => {
       if (!this.onerror) return;

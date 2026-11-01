@@ -3,11 +3,11 @@
 // Luồng: bộ nhận diện Chrome (listener.js) → chữ tạm hiện ngay + bản dịch tạm → tự chốt câu (segment.js) → bản dịch chốt.
 // Phiên bản: đổi bằng `npm run bump` (đổi cả ?v= ở index.html và các import để máy không nạp lẫn file cũ / mới).
 
-import { createListener, supported } from './listener.js?v=2026-11-01.4';
-import { toVietnamese } from './translate.js?v=2026-11-01.4';
-import { delta, sentenceCut, dropLastWord, isFragment, spaced } from './segment.js?v=2026-11-01.4';
+import { createListener, supported } from './listener.js?v=2026-11-01.5';
+import { toVietnamese } from './translate.js?v=2026-11-01.5';
+import { delta, sentenceCut, dropLastWord, isFragment, spaced } from './segment.js?v=2026-11-01.5';
 
-export const VERSION = '2026-11-01.4';
+export const VERSION = '2026-11-01.5';
 
 const LANGS = { 'ko-KR': 'Hàn', 'ja-JP': 'Nhật', 'zh-CN': 'Trung', 'en-US': 'Anh' };
 const LANG_KEY = 'dich.lang';
@@ -48,9 +48,9 @@ let speechEndTimer = null;
 let lastHealthMsg = ''; // lời báo tự chẩn đoán đang hiện
 const resetInterim = () => { raw = ''; interim = ''; interimAt = 0; firstAt = 0; };
 const health = { startedAt: 0, sessions: 0, speech: 0, text: 0, lastTextAt: 0, lastError: '', errorAt: 0 };
-// Có huỷ phiên nghe để mở phiên mới sau mỗi câu chốt không. Huỷ/mở dày → dịch vụ Google hay trả lỗi (test thật 01/11:
-// "không kết nối được" xuất hiện thường xuyên). Mặc định theo kết quả test tools/e2e/live.mjs; đổi để thử: localStorage 'dich.restart'.
-const RESTART_AFTER_COMMIT = (read('dich.restart') ?? '0') === '1';
+// Mở phiên nghe mới ngay sau mỗi câu chốt (mặc định). Android trả final muộn rồi mới mở phiên mới (~0,6s) → không mở ngay thì mất
+// đầu câu sau (e2e 01/11, tiếng Hàn: có 88/73/89% — không 77/68/65%). Tắt để thử: localStorage 'dich.restart'='0'.
+const restartAfterCommit = () => (read('dich.restart') ?? '1') === '1';
 const NET_WARN_COUNT = 4; // lỗi network: chỉ báo khi ≥ chừng này lần trong NET_WARN_WINDOW_MS (mất mạng thật: thử lại 0,25–2s, hỏng liên tục)
 const NET_WARN_WINDOW_MS = 10000; // lỗi lẻ tẻ (~8s/lần, test 01/11) không bao giờ chạm ngưỡng
 const netErrors = []; // giờ các lần lỗi network gần đây
@@ -100,7 +100,7 @@ const listener = supported && createListener({
     if (!running) return;
     clearTimeout(speechEndTimer); // còn chữ mới: người nói chưa dứt
     raw = t;
-    const d = delta(t, done, lang);
+    const d = delta(t, done);
     if (!d || d === interim) return;
     const at = now();
     gotText();
@@ -114,9 +114,9 @@ const listener = supported && createListener({
   },
   final(t) {
     if (!running) return;
-    const d = delta(t, done, lang);
+    const d = delta(t, done);
     const end = speechEndAt || interimAt || now();
-    done = '';
+    done = t; // giữ cả câu final: máy có lặp lại nó ở kết quả sau thì delta bỏ đi
     resetInterim();
     if (d) {
       gotText();
@@ -132,12 +132,12 @@ const listener = supported && createListener({
       if (!running || !interim) return;
       const t = interim;
       const end = speechEndAt;
-      if (RESTART_AFTER_COMMIT) {
+      if (restartAfterCommit()) {
         done = '';
         resetInterim();
         listener.restart();
       } else take(t);
-      if (RESTART_AFTER_COMMIT) commit(t, end);
+      if (restartAfterCommit()) commit(t, end);
     }, SPEECHEND_MS);
   },
   error(code) {
@@ -186,7 +186,7 @@ setInterval(() => {
   if (!running || !interim) return;
   const t = now();
   if (t - interimAt >= STABLE_MS) {
-    if (!RESTART_AFTER_COMMIT) return take(interim);
+    if (!restartAfterCommit()) return take(interim);
     const whole = interim;
     // chốt trọn phần đang nghe: mở phiên mới luôn (Android đóng phiên muộn → mất đầu câu sau)
     done = '';
