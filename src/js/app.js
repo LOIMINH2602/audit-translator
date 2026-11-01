@@ -3,11 +3,11 @@
 // Luồng: bộ nhận diện Chrome (listener.js) → chữ tạm hiện ngay + bản dịch tạm → tự chốt câu (segment.js) → bản dịch chốt.
 // Phiên bản: đổi bằng `npm run bump` (đổi cả ?v= ở index.html và các import để máy không nạp lẫn file cũ / mới).
 
-import { createListener, supported } from './listener.js?v=2026-11-01.5';
-import { toVietnamese } from './translate.js?v=2026-11-01.5';
-import { delta, sentenceCut, dropLastWord, isFragment, spaced } from './segment.js?v=2026-11-01.5';
+import { createListener, supported } from './listener.js?v=2026-11-02.1';
+import { toVietnamese } from './translate.js?v=2026-11-02.1';
+import { delta, sentenceCut, dropLastWord, isFragment, spaced } from './segment.js?v=2026-11-02.1';
 
-export const VERSION = '2026-11-01.5';
+export const VERSION = '2026-11-02.1';
 
 const LANGS = { 'ko-KR': 'Hàn', 'ja-JP': 'Nhật', 'zh-CN': 'Trung', 'en-US': 'Anh' };
 const LANG_KEY = 'dich.lang';
