@@ -5,6 +5,11 @@
   const dest = ctx.createMediaStreamDestination();
   const track = dest.stream.getAudioTracks()[0];
   window.__fakeTrack = track; // chế độ Tự nhận người nói lấy micro qua getUserMedia (tools/e2e/auto.mjs)
+  // __steal=true giả lập điện thoại (test thật 01/11/2026): trang mở thêm micro bằng getUserMedia thì bộ nhận diện chỉ nhận
+  // im lặng — "Đang nghe" nhưng không ra chữ.
+  const silent = ctx.createMediaStreamDestination().stream.getAudioTracks()[0];
+  window.__micTaken = false;
+  const srTrack = () => (window.__steal && window.__micTaken ? silent : track).clone();
   // micro thật luôn có dữ liệu: phát im lặng liên tục (nhiễu rất nhỏ) để track không bao giờ 'đứng'
   const hiss = ctx.createConstantSource(); hiss.offset.value = 0.0001; hiss.connect(dest); hiss.start();
   // __noise > 0: tiếng ồn nền liên tục (nhà xưởng, quạt, người xung quanh) trộn vào micro — micro giả im tuyệt đối thì
@@ -67,7 +72,7 @@
   window.__androidLike = false;
   const STARTUP_MS = 600;
   SR.prototype.start = function () {
-    if (!window.__androidLike) return orig.start.call(this, track.clone());
+    if (!window.__androidLike) return orig.start.call(this, srTrack());
     if (this.__stuck || this.__pending) throw new DOMException('recognition has already started', 'InvalidStateError');
     if (active && active !== this) { const a = active; try { a.abort(); } catch (_) {} }
     active = this;
@@ -84,7 +89,7 @@
     this.__pending = true;
     this.__t = setTimeout(() => {
       this.__pending = false;
-      orig.start.call(this, track.clone());
+      orig.start.call(this, srTrack());
     }, STARTUP_MS);
   };
   for (const m of ['abort', 'stop']) {

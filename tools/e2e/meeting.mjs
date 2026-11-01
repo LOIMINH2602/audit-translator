@@ -63,7 +63,9 @@ const page = `window.__CLIPS=${JSON.stringify(clips)};\n` + readTool('fakemic.js
   await window.__ready;
   window.__androidLike = ${ANDROID};
   // micro đo âm lượng (onset.js) nghe cùng nguồn âm thanh với bộ nhận diện
-  navigator.mediaDevices.getUserMedia = async () => new MediaStream([window.__fakeTrack.clone()]);
+  window.__steal = ${Boolean(process.env.STEAL)};
+  window.__gumCalls = 0;
+  navigator.mediaDevices.getUserMedia = async () => { window.__gumCalls++; window.__micTaken = true; return new MediaStream([window.__fakeTrack.clone()]); };
   if (${MOCK_TR}) {
     const real = window.fetch;
     window.fetch = async (u, o) => {
@@ -79,7 +81,7 @@ const page = `window.__CLIPS=${JSON.stringify(clips)};\n` + readTool('fakemic.js
   for (let i = 0; i < 200 && !window.__appReady; i++) await sleep(100); // mã app nạp xong (mạng chậm: nút chưa hoạt động)
   if (!window.__appReady) return { error: 'app không nạp xong sau 20 giây' };
   $('tabMeeting').click();
-  document.querySelector('#meetingLangChips [data-lang="${SR_LANG}"]').click();
+  document.querySelector('#meetingLangChips [data-lang="${process.env.CHIP || SR_LANG}"]').click();
   $('mtgToggle').click();
   await sleep(2500);
   // mốc thật của từng câu (theo giờ trang)
@@ -95,7 +97,7 @@ const page = `window.__CLIPS=${JSON.stringify(clips)};\n` + readTool('fakemic.js
   await sleep(total + 6000);
   const entries = [...document.querySelectorAll('#mtgLog .entry')].reverse().map((e) => ({ src: e.querySelector('.o').textContent, out: e.querySelector('.t').textContent }));
   const lat = [...document.querySelectorAll('#mtgLat .lat-row')].map((r) => r.dataset.k + ': ' + r.querySelector('b').textContent);
-  return { version: $('appVersion').textContent, total: Math.round(total), entries, marks, ev, lat, stats: window.__meeting.stats, diag: $('diagLog').textContent };
+  return { version: $('appVersion').textContent, total: Math.round(total), entries, marks, ev, lat, stats: window.__meeting.stats, diag: $('diagLog').textContent, gum: window.__gumCalls, err: $('mtgErr').hidden ? '' : $('mtgErr').textContent };
 })()`;
 
 const errors = [];
@@ -133,4 +135,5 @@ console.log(`  cách chốt câu: ${Object.entries(r.stats.lines.reduce((m, x) =
 if (!r.entries.length) console.log('NHẬT KÝ ĐẦY ĐỦ (0 câu):\n' + r.diag + '\nSỰ KIỆN ĐẦU: ' + JSON.stringify(r.ev.slice(0, 5)));
 if (process.env.DIAG) console.log(r.diag.split('\n').filter((l) => /chốt|LỖI|CẢNH BÁO|error|start|end|đo|final|Micro|Trang/.test(l)).join('\n'));
 if (process.env.SHOW) r.entries.forEach((e, i) => console.log(`  ${i + 1}. ${e.src}\n     → ${e.out}`));
+console.log(`  app mở thêm micro: ${r.gum} lần · thông báo trên màn hình: ${r.err || '(không có)'}`);
 console.log('  lỗi JS:', errors.length ? errors : 'không');

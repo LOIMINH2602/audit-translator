@@ -2,8 +2,10 @@
 // tai nghe; Anh/Trung/Nhật/Hàn → Việt; mục tiêu độ trễ: chữ ≤ 0,5s, bản dịch tạm ≤ 1s, bản dịch chốt ≤ 1,5s sau khi hết câu).
 // Nhận diện của Chrome (Google) vì ra chữ ngay khi người nói đang nói (Whisper chỉ ra chữ sau khi hết câu → không đạt 0,5s).
 // Trước đây cách này hỏng vì tai nghe Bluetooth bị chuyển chế độ mỗi lần mở micro; không đọc vào tai nghe thì không còn lỗi đó.
-// App tự đo 3 độ trễ trên máy và hiện trên màn hình. Mốc: mức âm lượng micro thật (onset.js — lúc mở miệng / dứt lời); máy không
-// cho mở micro song song thì dùng tín hiệu của bộ nhận diện (đến muộn hơn → số đo đẹp hơn thực tế, ghi "ước tính").
+// App tự đo 3 độ trễ trên máy, hiện trên màn hình — ước tính theo tín hiệu bắt đầu nói / hết tiếng nói của bộ nhận diện.
+// 01/11/2026: bỏ bộ đo âm lượng micro (onset.js) khỏi màn này — nó mở thêm micro bằng getUserMedia, trên điện thoại Lợi Minh
+// làm bộ nhận diện chỉ nhận im lặng: "Đang nghe" mà không ra chữ (test thật Bước 1). Bộ nhận diện phải là thứ DUY NHẤT giữ micro.
+// Tự chẩn đoán (checkHealth): nghe mà không ra chữ thì hiện ngay trên màn hình máy đang kẹt ở đâu.
 
 import { $, setError, timeNow, copyText, renderLog, logToText } from './ui.js';
 import { NAMES } from './config.js';
@@ -13,7 +15,6 @@ import { parseGlossary, applyGlossary } from './glossary.js';
 import { diag } from './diagnostics.js';
 import { holdScreen, classifyMicError } from './keepalive.js';
 import { summarize } from './meetstats.js';
-import { startOnsetMeter } from './onset.js';
 
 const LANG_KEY = 'audit.mtgLang.v1';
 const ENGLISH_G = /\b(the|we|will|and|then|of|is|are|with|this|that|our|you|first|finally)\b/gi;
@@ -70,10 +71,9 @@ export function initMeeting() {
   let interimAt = 0; // lần cuối phần mới đổi (≈ lúc nghe ra từ mới nhất)
   let firstAt = 0; // lúc phần mới bắt đầu
   let onsetAt = 0; // bắt đầu có tiếng nói, chưa có chữ
-  let meter = null; // bộ đo âm lượng micro (null = máy không cho mở song song → dùng tín hiệu của bộ nhận diện)
-  let voiceEndAt = 0; // lúc dứt lời gần nhất (âm lượng)
-  // mốc hết câu cho độ trễ chốt: dứt lời thật (âm lượng) nếu có và không muộn hơn lúc chốt, không thì mốc của bộ nhận diện
-  const endMark = (fallback) => (meter && voiceEndAt && voiceEndAt <= now() && voiceEndAt > fallback - 3000 ? Math.min(voiceEndAt, fallback) : fallback);
+  const endMark = (t) => t;
+  // tự chẩn đoán: bộ nhận diện có chạy không, có nghe thấy tiếng không, có ra chữ không
+  const health = { startedAt: 0, sessions: 0, speech: 0, text: 0, lastError: '', lastTextAt: 0 };
   let speechEndAt = 0;
   const resetInterim = () => { interim = ''; rawInterim = ''; interimAt = 0; firstAt = 0; };
 
@@ -89,8 +89,8 @@ export function initMeeting() {
     name: 'hội-trường',
     lang: currentLang,
     continuous: false,
-    onStart: () => { committed = ''; },
-    onSpeechStart: () => { if (!meter && !onsetAt) onsetAt = now(); },
+    onStart: () => { committed = ''; health.sessions++; },
+    onSpeechStart: () => { health.speech++; if (!onsetAt) onsetAt = now(); },
     onFinal: (text) => {
       const d = delta(text);
       const end = speechEndAt || interimAt || now();
@@ -120,6 +120,8 @@ export function initMeeting() {
       rawInterim = t;
       if (!d || d === interim) return;
       const at = now();
+      health.text++;
+      health.lastTextAt = at;
       if (onsetAt) { record('text', at - onsetAt); onsetAt = 0; }
       speechEndAt = 0;
       if (!firstAt) firstAt = at;
@@ -129,6 +131,7 @@ export function initMeeting() {
       preview();
     },
     onError: async (err) => {
+      health.lastError = err;
       const kind = await classifyMicError(err);
       if (!kind) return diag('LỖI hội-trường: ' + err); // lỗi tạm: recognizer tự khởi động lại
       if (!running) return;
@@ -319,8 +322,6 @@ export function initMeeting() {
     resetAll();
     if (running) {
       rec.stop();
-      if (meter) meter.stop();
-      meter = null;
       setRunning(false);
     } else {
       for (const k of Object.keys(lat)) lat[k].length = 0;
@@ -328,24 +329,37 @@ export function initMeeting() {
       rec.setLang(currentLang);
       rec.start();
       setRunning(true);
-      startMeter();
+      Object.assign(health, { startedAt: now(), sessions: 0, speech: 0, text: 0, lastError: '', lastTextAt: 0 });
+      $('mtgLatNote').textContent = 'Ước tính theo tín hiệu của bộ nhận diện.';
     }
   };
 
-  async function startMeter() {
-    try {
-      meter = await startOnsetMeter((ev, t) => {
-        if (ev === 'start') { if (!interim || now() - interimAt > 400) onsetAt = t; }
-        else voiceEndAt = t;
-      });
-      diag('Hội trường: đo độ trễ theo âm lượng micro thật');
-      $('mtgLatNote').textContent = 'Đo theo âm thanh thật từ micro.';
-    } catch (e) {
-      meter = null;
-      diag('Hội trường: không mở được micro song song để đo (' + (e && e.name) + ') → dùng tín hiệu của bộ nhận diện');
-      $('mtgLatNote').textContent = 'Ước tính (máy không cho mở micro song song): độ trễ thật có thể cao hơn ~0,3–0,8 giây.';
+  // Mỗi giây: nghe ≥ 6 giây mà chưa ra chữ → nói rõ trên màn hình máy kẹt ở bước nào (người dùng không phải gửi nhật ký).
+  const ERR = {
+    'not-allowed': 'Micro bị chặn: bấm ổ khoá cạnh địa chỉ trang → Quyền → Micro → Cho phép.',
+    'audio-capture': 'Không lấy được tiếng từ micro: app khác đang dùng micro (gọi điện, ghi âm, Zalo) — tắt app đó rồi bấm lại.',
+    network: 'Không kết nối được dịch vụ nhận diện của Google: kiểm tra Wi-Fi/4G.',
+    'language-not-supported': 'Máy chưa hỗ trợ nhận diện tiếng này: cài thêm ngôn ngữ trong ứng dụng Google → Giọng nói.',
+    'service-not-allowed': 'Chrome chặn nhận diện giọng nói: mở trang bằng Chrome (không qua Zalo/Facebook).',
+  };
+  let healthMsg = '';
+  setInterval(() => {
+    if (!running) return;
+    const t = now();
+    let msg = '';
+    const quiet = t - (health.lastTextAt || health.startedAt);
+    if (quiet >= 6000) {
+      if (ERR[health.lastError]) msg = ERR[health.lastError];
+      else if (!health.sessions) msg = 'Bộ nhận diện giọng nói chưa khởi động được. Bấm Dừng nghe rồi Bắt đầu nghe lại; vẫn lỗi thì đóng hẳn app và mở lại.';
+      else if (!health.speech) msg = 'Micro chưa nghe thấy tiếng nói nào. Đặt điện thoại gần người nói / gần loa hơn.';
+      else if (!health.text) msg = `Micro có nghe thấy tiếng nhưng không ra chữ. Kiểm tra đã chọn đúng tiếng đang nói (đang chọn: ${NAMES[currentLang]}).`;
     }
-  }
+    if (msg !== healthMsg) {
+      healthMsg = msg;
+      setError($('mtgErr'), msg);
+      if (msg) diag(`Hội trường tự chẩn đoán: ${msg} (phiên ${health.sessions}, có tiếng ${health.speech}, ra chữ ${health.text}, lỗi cuối "${health.lastError}")`);
+    }
+  }, 1000);
 
   $('mtgCopy').onclick = () => copyText(logToText(log), $('mtgCopy'));
   // nút khoá tới lúc này (index.html): mạng chậm thì nút hiện trước khi mã nạp xong — bấm sớm sẽ không có gì xảy ra (test 16/10)
