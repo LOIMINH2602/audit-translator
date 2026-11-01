@@ -64,9 +64,33 @@ const page = `window.__CLIPS=${JSON.stringify(clips)};\n` + readTool('fakemic.js
   document.querySelector('#langs [data-lang="${process.env.CHIP || SR_LANG}"]').click();
   const SRP = window.webkitSpeechRecognition.prototype;
   const st = SRP.start;
-  SRP.start = function (...a) { window.__lastSR = this; return st.apply(this, a); };
+  // NETRATE=0.3: mỗi phiên nhận diện có 30% bị dịch vụ Google báo lỗi "network" sau 0,3–2,3 giây (rồi kết thúc) — như điện thoại
+  // thật 01/11. NETRATE=1: lỗi liên tục (mất mạng thật) → app phải báo.
+  window.__netErrs = 0;
+  SRP.start = function (...a) {
+    window.__lastSR = this;
+    const r = st.apply(this, a);
+    if (Math.random() < ${Number(process.env.NETRATE || 0)}) setTimeout(() => {
+      if (!this.onerror) return;
+      window.__netErrs++;
+      try { this.abort(); } catch (_) {}
+      this.onerror({ error: 'network' });
+      if (this.onend) this.onend();
+    }, 300 + Math.random() * 2000);
+    return r;
+  };
   $('toggle').click();
   await sleep(2500);
+  // NETEVERY=8000: cứ ~8 giây dịch vụ Google báo lỗi "network" cho phiên đang chạy (kể cả giữa câu)
+  if (${Number(process.env.NETEVERY || 0)}) setInterval(() => {
+    const r = window.__lastSR;
+    if (!r || !r.onerror) return;
+    window.__netErrs++;
+    const onerror = r.onerror, onend = r.onend;
+    try { r.abort(); } catch (_) {}
+    onerror.call(r, { error: 'network' });
+    if (onend) onend.call(r);
+  }, ${Number(process.env.NETEVERY || 0)} * (0.7 + Math.random() * 0.6));
   if (${Boolean(process.env.NETERR)} && window.__lastSR && window.__lastSR.onerror) window.__lastSR.onerror({ error: 'network' });
   const ids = ${JSON.stringify(items.map((x) => x.id))};
   const marks = [];
@@ -80,7 +104,7 @@ const page = `window.__CLIPS=${JSON.stringify(clips)};\n` + readTool('fakemic.js
     .observe($('warn'), { attributes: true, childList: true, characterData: true, subtree: true });
   const total = await __say(${JSON.stringify(seq)});
   await sleep(total + 6000);
-  return { version: $('version').textContent, total: Math.round(total), history: window.__app.history, marks, ev, gum: window.__gumCalls, warns,
+  return { version: $('version').textContent, total: Math.round(total), history: window.__app.history, marks, ev, gum: window.__gumCalls, warns, netErrs: window.__netErrs,
     warn: $('warn').hidden ? '' : $('warn').textContent, log: $('log').textContent };
 })()`;
 
@@ -108,6 +132,6 @@ console.log(`  câu đã dịch: ${r.history.length} · nghe được (khớp ch
 console.log(`  THẬT: chữ hiện sau khi bắt đầu nói ${sec(q(textLat, 0.5))} (chậm nhất 10% ${sec(q(textLat, 0.9))}) · dịch chốt sau khi hết câu ${sec(q(finalLat, 0.5))} (chậm nhất 10% ${sec(q(finalLat, 0.9))})`);
 console.log(`  lời báo trên màn hình: ${r.warn || '(không có)'}`);
 console.log(`  dòng đỏ đã hiện trong buổi: ${r.warns.length ? r.warns.map((w) => '"' + w.slice(0, 60) + '"').join(', ') : '(không lần nào)'}`);
-console.log(`  app mở thêm micro: ${r.gum} lần · lỗi JS: ${errors.length ? errors.join(' | ') : 'không'}`);
+console.log(`  lỗi network giả lập: ${r.netErrs} lần · app mở thêm micro: ${r.gum} lần · lỗi JS: ${errors.length ? errors.join(' | ') : 'không'}`);
 if (process.env.SHOW) r.history.forEach((x, i) => console.log(`  ${i + 1}. ${x.src}\n     → ${x.vi}`));
 if (!r.history.length || process.env.LOG) console.log('NHẬT KÝ:\n' + r.log);

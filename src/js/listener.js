@@ -1,14 +1,19 @@
 // Nghe liên tục bằng bộ nhận diện giọng nói của Chrome (Google). Đây là thứ DUY NHẤT trong app dùng micro — app không gọi
 // getUserMedia (bài học 11/2026: mở thêm micro song song thì trên điện thoại bộ nhận diện chỉ nhận im lặng).
-// Mỗi phiên 1 đối tượng SpeechRecognition mới (continuous=false — Android vốn chạy kiểu này); phiên hết thì mở phiên mới ngay.
-// Phiên khởi động không xong sau START_TIMEOUT_MS (Android có khi treo) → bỏ, tạo phiên mới.
+// continuous=true (01/11/2026): Chrome Android mới (mã nguồn 12/10/2026) giữ 1 phiên tới 5 phút, cắt câu bên trong — ít mở/huỷ
+// phiên. Chrome cũ thì phiên vẫn hết sau mỗi câu như trước → mở phiên mới ngay. Mỗi phiên 1 đối tượng SpeechRecognition mới.
+// Lỗi "network": Chrome Android gộp ERROR_NETWORK / NETWORK_TIMEOUT / SERVER của dịch vụ Google vào 1 mã (SpeechRecognitionImpl.java)
+// — thường là lỗi tạm của máy chủ, không phải mất mạng → thử lại ngay (0,25s), lỗi liên tiếp mới chờ lâu dần.
+// Phiên khởi động không xong sau START_TIMEOUT_MS, hoặc chạy mà STALL_MS không có sự kiện nào (Chrome bỏ qua một số lỗi của
+// dịch vụ, vd. "quá nhiều yêu cầu" → phiên chết im lặng) → bỏ, tạo phiên mới.
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 export const supported = Boolean(SR);
 
 const RESTART_MS = 120;
 const START_TIMEOUT_MS = 3000;
-const BACKOFF_MS = 1500; // lỗi tạm (mạng, micro bận): chờ rồi thử lại
+const RETRY_MS = [250, 500, 1000, 2000]; // lỗi tạm liên tiếp lần 1, 2, 3, 4+
+const STALL_MS = 30000;
 
 // on: { interim(text), final(text), speechStart(), speechEnd(), start(), error(code), log(msg) }
 export function createListener(on) {
@@ -17,6 +22,16 @@ export function createListener(on) {
   let want = false;
   let timer = null;
   let watchdog = null;
+  let stall = null;
+  let fails = 0; // lỗi tạm liên tiếp (reset khi có chữ)
+  const alive = () => {
+    clearTimeout(stall);
+    stall = setTimeout(() => {
+      if (!want) return;
+      log('phiên nhận diện ' + STALL_MS / 1000 + ' giây không có sự kiện nào → tạo phiên mới');
+      begin();
+    }, STALL_MS);
+  };
   const log = (m) => on.log && on.log(m);
 
   function discard() {
@@ -30,24 +45,28 @@ export function createListener(on) {
   function begin() {
     clearTimeout(timer);
     clearTimeout(watchdog);
+    clearTimeout(stall);
     discard();
     if (!want) return;
     const r = new SR();
     rec = r;
     r.lang = lang;
-    r.continuous = false;
+    r.continuous = true;
     r.interimResults = true;
     r.maxAlternatives = 1;
     const live = () => r === rec;
     r.onstart = () => {
       if (!live()) return;
       clearTimeout(watchdog);
+      alive();
       on.start && on.start();
     };
-    r.onspeechstart = () => live() && on.speechStart && on.speechStart();
-    r.onspeechend = () => live() && on.speechEnd && on.speechEnd();
+    r.onspeechstart = () => { if (live()) { alive(); on.speechStart && on.speechStart(); } };
+    r.onspeechend = () => { if (live()) { alive(); on.speechEnd && on.speechEnd(); } };
     r.onresult = (e) => {
       if (!live()) return;
+      alive();
+      fails = 0;
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i];
@@ -67,11 +86,13 @@ export function createListener(on) {
         return;
       }
       rec = null;
-      timer = setTimeout(begin, BACKOFF_MS);
+      clearTimeout(stall);
+      timer = setTimeout(begin, RETRY_MS[Math.min(fails++, RETRY_MS.length - 1)]);
     };
     r.onend = () => {
       if (!live()) return;
       rec = null;
+      clearTimeout(stall);
       timer = setTimeout(begin, RESTART_MS);
     };
     try {
@@ -96,6 +117,7 @@ export function createListener(on) {
       want = false;
       clearTimeout(timer);
       clearTimeout(watchdog);
+      clearTimeout(stall);
       discard();
     },
     // bỏ phiên hiện tại, mở phiên mới ngay (đã tự chốt câu bằng chữ tạm, không chờ máy chốt)

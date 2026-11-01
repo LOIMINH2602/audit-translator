@@ -3,11 +3,11 @@
 // Luồng: bộ nhận diện Chrome (listener.js) → chữ tạm hiện ngay + bản dịch tạm → tự chốt câu (segment.js) → bản dịch chốt.
 // Phiên bản: đổi bằng `npm run bump` (đổi cả ?v= ở index.html và các import để máy không nạp lẫn file cũ / mới).
 
-import { createListener, supported } from './listener.js?v=2026-11-01.3';
-import { toVietnamese } from './translate.js?v=2026-11-01.3';
-import { delta, sentenceCut, dropLastWord, isFragment, spaced } from './segment.js?v=2026-11-01.3';
+import { createListener, supported } from './listener.js?v=2026-11-01.4';
+import { toVietnamese } from './translate.js?v=2026-11-01.4';
+import { delta, sentenceCut, dropLastWord, isFragment, spaced } from './segment.js?v=2026-11-01.4';
 
-export const VERSION = '2026-11-01.3';
+export const VERSION = '2026-11-01.4';
 
 const LANGS = { 'ko-KR': 'Hàn', 'ja-JP': 'Nhật', 'zh-CN': 'Trung', 'en-US': 'Anh' };
 const LANG_KEY = 'dich.lang';
@@ -48,6 +48,12 @@ let speechEndTimer = null;
 let lastHealthMsg = ''; // lời báo tự chẩn đoán đang hiện
 const resetInterim = () => { raw = ''; interim = ''; interimAt = 0; firstAt = 0; };
 const health = { startedAt: 0, sessions: 0, speech: 0, text: 0, lastTextAt: 0, lastError: '', errorAt: 0 };
+// Có huỷ phiên nghe để mở phiên mới sau mỗi câu chốt không. Huỷ/mở dày → dịch vụ Google hay trả lỗi (test thật 01/11:
+// "không kết nối được" xuất hiện thường xuyên). Mặc định theo kết quả test tools/e2e/live.mjs; đổi để thử: localStorage 'dich.restart'.
+const RESTART_AFTER_COMMIT = (read('dich.restart') ?? '0') === '1';
+const NET_WARN_COUNT = 4; // lỗi network: chỉ báo khi ≥ chừng này lần trong NET_WARN_WINDOW_MS (mất mạng thật: thử lại 0,25–2s, hỏng liên tục)
+const NET_WARN_WINDOW_MS = 10000; // lỗi lẻ tẻ (~8s/lần, test 01/11) không bao giờ chạm ngưỡng
+const netErrors = []; // giờ các lần lỗi network gần đây
 const ERROR_FRESH_MS = 15000; // lỗi mạng/micro chỉ được nêu nếu xảy ra trong chừng này (test thật 01/11: 1 lần mạng chập chờn,
 // chữ vẫn ra bình thường, nhưng lúc người nói ngừng 6 giây app lại báo "không kết nối được" theo lỗi cũ)
 function gotText() {
@@ -126,16 +132,30 @@ const listener = supported && createListener({
       if (!running || !interim) return;
       const t = interim;
       const end = speechEndAt;
-      done = '';
-      resetInterim();
-      listener.restart();
-      commit(t, end);
+      if (RESTART_AFTER_COMMIT) {
+        done = '';
+        resetInterim();
+        listener.restart();
+      } else take(t);
+      if (RESTART_AFTER_COMMIT) commit(t, end);
     }, SPEECHEND_MS);
   },
   error(code) {
     health.lastError = code;
     health.errorAt = now();
     if (!running) return;
+    // phiên chết giữa câu: giữ phần đã nghe được, vẫn dịch (không để mất)
+    if (interim) {
+      const t = interim;
+      const end = interimAt;
+      done = '';
+      resetInterim();
+      commit(t, end);
+    }
+    if (code === 'network') {
+      netErrors.push(now());
+      while (netErrors.length && now() - netErrors[0] > NET_WARN_WINDOW_MS) netErrors.shift();
+    }
     if (code === 'not-allowed') {
       if (document.hidden) return; // Android chặn nghe khi trang ẩn — hiện lại thì nghe tiếp (onVisible)
       micDenied().then((denied) => {
@@ -166,6 +186,7 @@ setInterval(() => {
   if (!running || !interim) return;
   const t = now();
   if (t - interimAt >= STABLE_MS) {
+    if (!RESTART_AFTER_COMMIT) return take(interim);
     const whole = interim;
     // chốt trọn phần đang nghe: mở phiên mới luôn (Android đóng phiên muộn → mất đầu câu sau)
     done = '';
@@ -282,7 +303,8 @@ setInterval(() => {
   if (!running) return;
   const quiet = now() - (health.lastTextAt || health.startedAt);
   let msg = '';
-  const err = now() - health.errorAt < ERROR_FRESH_MS ? health.lastError : '';
+  let err = now() - health.errorAt < ERROR_FRESH_MS ? health.lastError : '';
+  if (err === 'network' && netErrors.filter((t) => now() - t < NET_WARN_WINDOW_MS).length < NET_WARN_COUNT) err = ''; // lỗi lẻ tẻ: đã tự nghe lại
   if (quiet >= SILENT_WARN_MS) {
     if (err === 'audio-capture') msg = 'Không lấy được tiếng từ micro: app khác đang dùng micro (gọi điện, ghi âm, Zalo). Tắt app đó rồi bấm Dừng → Bắt đầu nghe.';
     else if (err === 'network') msg = 'Không kết nối được dịch vụ nhận diện giọng nói của Google. Kiểm tra Wi-Fi / 4G.';
