@@ -3,11 +3,11 @@
 // Luồng: bộ nhận diện Chrome (listener.js) → chữ tạm hiện ngay + bản dịch tạm → tự chốt câu (segment.js) → bản dịch chốt.
 // Phiên bản: đổi bằng `npm run bump` (đổi cả ?v= ở index.html và các import để máy không nạp lẫn file cũ / mới).
 
-import { createListener, supported } from './listener.js?v=2026-11-02.2';
-import { toVietnamese } from './translate.js?v=2026-11-02.2';
-import { delta, sentenceCut, dropLastWord, isFragment, spaced } from './segment.js?v=2026-11-02.2';
+import { createListener, supported } from './listener.js?v=2026-11-02.3';
+import { toVietnamese } from './translate.js?v=2026-11-02.3';
+import { delta, sentenceCut, dropLastWord, isFragment, spaced } from './segment.js?v=2026-11-02.3';
 
-export const VERSION = '2026-11-02.2';
+export const VERSION = '2026-11-02.3';
 
 const LANGS = { 'ko-KR': 'Hàn', 'ja-JP': 'Nhật', 'zh-CN': 'Trung', 'en-US': 'Anh' };
 const LANG_KEY = 'dich.lang';
@@ -15,7 +15,7 @@ const STABLE_MS = 700; // chữ đứng yên chừng này = người nói ngừn
 const SPEECHEND_MS = 350; // máy báo hết tiếng nói + chừng này không có chữ mới → chốt câu
 const CUT_MS = 6000; // nói liền: từ 6 giây tìm chỗ hết câu để chốt
 const HARD_MS = 9000; // nói liền 9 giây không thấy chỗ hết câu → cắt
-const FRAGMENT_WAIT_MS = 8000; // mảnh 1 từ chờ ghép vào câu sau
+const FRAGMENT_WAIT_MS = 1500; // mảnh 1 từ chờ ghép vào câu sau. Đo trên S22 (podcast Hàn thật 01/11): chờ 8s làm "그때부터", "공항에서" trễ 8,8s
 const DRAFT_EVERY_MS = 500; // bản dịch tạm tối đa 2 lần/giây (gọi Google dày quá thì bị chặn)
 const DRAFT_PAUSE_MS = 5000; // bản dịch tạm lỗi → nghỉ, để dành cho bản dịch chốt
 const SILENT_WARN_MS = 6000; // đang nghe mà chừng này không ra chữ → tự chẩn đoán trên màn hình
