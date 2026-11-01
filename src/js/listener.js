@@ -12,6 +12,10 @@ export const supported = Boolean(SR);
 const RESTART_MS = 120;
 const START_TIMEOUT_MS = 3000;
 const BACKOFF_MS = 1500; // lỗi tạm (mạng, micro bận): chờ rồi thử lại
+// Phiên treo: đo trên S22 Ultra của Lợi Minh 01/11/2026 (gỡ lỗi USB): mạng 4G mất 1 nhịp (GRPC 14) + chưa có gói tiếng Hàn offline
+// → dịch vụ giọng nói Google mở micro cho phiên mới rồi treo, không bắn kết quả / lỗi / kết thúc nào → app "Đang nghe" mà chết hẳn.
+// Phiên bình thường (kể cả im lặng) luôn kết thúc trong ~5–8s → STALL_MS không có sự kiện nào = treo → bỏ, tạo phiên mới.
+const STALL_MS = 15000;
 
 // on: { interim(text), final(text), speechStart(), speechEnd(), start(), error(code), log(msg) }
 export function createListener(on) {
@@ -20,6 +24,17 @@ export function createListener(on) {
   let want = false;
   let timer = null;
   let watchdog = null;
+  let stall = null;
+  // gọi mỗi khi phiên có động tĩnh: dời hạn "treo"
+  const alive = () => {
+    clearTimeout(stall);
+    stall = setTimeout(() => {
+      if (!want) return;
+      log('phiên nhận diện ' + STALL_MS / 1000 + ' giây không có động tĩnh (treo) → tạo phiên mới');
+      on.stall && on.stall();
+      begin();
+    }, STALL_MS);
+  };
   const log = (m) => on.log && on.log(m);
 
   function discard() {
@@ -33,6 +48,7 @@ export function createListener(on) {
   function begin() {
     clearTimeout(timer);
     clearTimeout(watchdog);
+    clearTimeout(stall);
     discard();
     if (!want) return;
     const r = new SR();
@@ -45,12 +61,14 @@ export function createListener(on) {
     r.onstart = () => {
       if (!live()) return;
       clearTimeout(watchdog);
+      alive();
       on.start && on.start();
     };
-    r.onspeechstart = () => live() && on.speechStart && on.speechStart();
-    r.onspeechend = () => live() && on.speechEnd && on.speechEnd();
+    r.onspeechstart = () => { if (live()) { alive(); on.speechStart && on.speechStart(); } };
+    r.onspeechend = () => { if (live()) { alive(); on.speechEnd && on.speechEnd(); } };
     r.onresult = (e) => {
       if (!live()) return;
+      alive();
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i];
@@ -70,11 +88,13 @@ export function createListener(on) {
         return;
       }
       rec = null;
+      clearTimeout(stall);
       timer = setTimeout(begin, BACKOFF_MS);
     };
     r.onend = () => {
       if (!live()) return;
       rec = null;
+      clearTimeout(stall);
       timer = setTimeout(begin, RESTART_MS);
     };
     try {
@@ -99,6 +119,7 @@ export function createListener(on) {
       want = false;
       clearTimeout(timer);
       clearTimeout(watchdog);
+      clearTimeout(stall);
       discard();
     },
     // bỏ phiên hiện tại, mở phiên mới ngay (đã tự chốt câu bằng chữ tạm, không chờ máy chốt)
